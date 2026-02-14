@@ -1,9 +1,12 @@
 # 모임 생성/조회 API
 
-from fastapi import APIRouter, Depends, HTTPException
+from typing import List
+
+from fastapi import APIRouter, Depends, HTTPException, Query
 from geoalchemy2 import WKTElement
 from geoalchemy2.shape import to_shape
 from shapely.geometry import Point
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -41,6 +44,30 @@ def create_meetup(body: MeetupCreate, db: Session = Depends(get_db)) -> MeetupRe
     db.commit()
     db.refresh(meetup)
     return _meetup_to_response(meetup)
+
+
+@router.get("/nearby", response_model=List[MeetupResponse])
+def get_meetups_nearby(
+    lat: float = Query(..., ge=-90, le=90),
+    lng: float = Query(..., ge=-180, le=180),
+    radius_km: float = Query(5.0, ge=0.1),
+    limit: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+) -> List[MeetupResponse]:
+    """사용자 좌표 기준 반경 내 모임 검색. 가까운 순 정렬."""
+    pt = Point(lng, lat)
+    user_geog = func.ST_GeogFromText(f"SRID=4326;{pt.wkt}")
+    radius_m = radius_km * 1000
+    # location::geography 와 ST_DWithin / ST_Distance 사용
+    loc_geog = func.ST_GeogFromText(func.ST_AsText(Meetup.location))
+    q = (
+        db.query(Meetup)
+        .filter(func.ST_DWithin(loc_geog, user_geog, radius_m))
+        .order_by(func.ST_Distance(loc_geog, user_geog))
+        .limit(limit)
+    )
+    rows = q.all()
+    return [_meetup_to_response(m) for m in rows]
 
 
 @router.get("/{meetup_id}", response_model=MeetupResponse)
