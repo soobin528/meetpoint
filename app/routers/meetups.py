@@ -16,8 +16,8 @@ from app.schemas.meetup import MeetupCreate, MeetupResponse
 router = APIRouter(prefix="/meetups", tags=["Meetups"])
 
 
-def _meetup_to_response(meetup: Meetup) -> MeetupResponse:
-    """location(Point)에서 lat/lng 추출해 MeetupResponse 생성."""
+def _meetup_to_response(meetup: Meetup, distance_km: float | None = None) -> MeetupResponse:
+    """location(Point)에서 lat/lng 추출해 MeetupResponse 생성. distance_km는 nearby 전용."""
     shape = to_shape(meetup.location)
     return MeetupResponse(
         id=meetup.id,
@@ -26,6 +26,7 @@ def _meetup_to_response(meetup: Meetup) -> MeetupResponse:
         capacity=meetup.capacity,
         lat=shape.y,
         lng=shape.x,
+        distance_km=distance_km,
     )
 
 
@@ -54,20 +55,24 @@ def get_meetups_nearby(
     limit: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
 ) -> List[MeetupResponse]:
-    """사용자 좌표 기준 반경 내 모임 검색. 가까운 순 정렬."""
+    """사용자 좌표 기준 반경 내 모임 검색. distance_km 포함, 가까운 순 정렬."""
+    # nearby만 거리 계산: 요청 좌표(lat,lng)가 있어야 의미 있고, 정렬·표시가 명확해짐
     pt = Point(lng, lat)
     user_geog = func.ST_GeogFromText(f"SRID=4326;{pt.wkt}")
     radius_m = radius_km * 1000
-    # location::geography 와 ST_DWithin / ST_Distance 사용
     loc_geog = func.ST_GeogFromText(func.ST_AsText(Meetup.location))
+    distance_m = func.ST_Distance(loc_geog, user_geog)  # geography → 미터
     q = (
-        db.query(Meetup)
+        db.query(Meetup, distance_m.label("distance_m"))
         .filter(func.ST_DWithin(loc_geog, user_geog, radius_m))
-        .order_by(func.ST_Distance(loc_geog, user_geog))
+        .order_by(distance_m)
         .limit(limit)
     )
     rows = q.all()
-    return [_meetup_to_response(m) for m in rows]
+    return [
+        _meetup_to_response(m, distance_km=round(d / 1000.0, 6))
+        for m, d in rows
+    ]
 
 
 @router.get("/{meetup_id}", response_model=MeetupResponse)

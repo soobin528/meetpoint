@@ -26,3 +26,5 @@ class MeetupResponse(BaseModel):
     capacity: int
     lat: float
     lng: float
+    # nearby에서만 의미 있음(사용자 위치 기준 거리). 단건 조회는 기준점이 없어 None.
+    distance_km: Optional[float] = None
