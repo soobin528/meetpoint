@@ -24,6 +24,9 @@ RUN pip install --no-cache-dir --upgrade pip \
 
 # 애플리케이션 코드 복사
 COPY app /app/app
+# Alembic (기동 시 마이그레이션으로 meetups 테이블 생성)
+COPY alembic.ini /app/
+COPY alembic /app/alembic
 
 # 컨테이너 기본 실행 명령
 # - docker-compose.yml 에서 override 하여 --reload 등을 설정함

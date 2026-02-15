@@ -7,6 +7,7 @@ uvicorn[standard]==0.30.0 # ASGI 서버 (개발용)
 SQLAlchemy==2.0.25        # ORM 및 DB 추상화
 psycopg2-binary==2.9.9    # PostgreSQL 드라이버
 geoalchemy2==0.15.2       # PostGIS 지원 SQLAlchemy 확장
+alembic==1.13.0           # DB 마이그레이션
 shapely
 
 redis==5.0.1              # Redis 클라이언트

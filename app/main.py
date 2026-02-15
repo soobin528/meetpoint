@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -5,6 +7,17 @@ from app.database import engine
 from app.models.base import Base
 from app.models.meetup import Meetup  # noqa: F401 — 테이블 메타데이터 등록용
 from app.routers.meetups import router as meetups_router
+
+
+def _run_alembic_upgrade() -> None:
+    """앱 기동 시 DB 마이그레이션 자동 적용 (meetups 테이블 등)."""
+    from alembic import command
+    from alembic.config import Config
+
+    root = Path(__file__).resolve().parent.parent
+    cfg = Config(str(root / "alembic.ini"))
+    command.upgrade(cfg, "head")
+
 
 # 애플리케이션 팩토리 패턴을 사용할 수도 있지만
 # 초기 세팅 단계에서는 단순한 전역 인스턴스로 구성
@@ -14,8 +27,15 @@ app = FastAPI(
     version="0.1.0",
 )
 
-# 개발용 임시: 앱 시작 시 meetups 등 테이블 자동 생성 (추후 Alembic으로 이전 예정)
-Base.metadata.create_all(bind=engine)
+
+@app.on_event("startup")
+def _startup_migrate() -> None:
+    """기동 시 Alembic upgrade head 실행 (동기 블로킹을 스레드로 처리)."""
+    try:
+        _run_alembic_upgrade()
+    except Exception:
+        pass  # DB 미기동 등 실패 시에도 앱은 기동 (예: 로컬에서 DB 없이 실행 시)
+
 
 # ✅ 라우터 등록은 app 생성 후에!
 app.include_router(meetups_router)
