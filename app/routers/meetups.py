@@ -9,6 +9,7 @@ from shapely.geometry import Point
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.crud.meetup_crud import get_meetups_in_bbox
 from app.database import get_db
 from app.models.meetup import Meetup
 from app.schemas.meetup import MeetupCreate, MeetupResponse
@@ -73,6 +74,19 @@ def get_meetups_nearby(
         _meetup_to_response(m, distance_km=round(d / 1000.0, 6))
         for m, d in rows
     ]
+
+
+@router.get("/bbox", response_model=List[MeetupResponse])
+def get_meetups_bbox(
+    min_lat: float = Query(..., ge=-90, le=90),
+    min_lng: float = Query(..., ge=-180, le=180),
+    max_lat: float = Query(..., ge=-90, le=90),
+    max_lng: float = Query(..., ge=-180, le=180),
+    db: Session = Depends(get_db),
+) -> List[MeetupResponse]:
+    """지도 BBox(사각형) 영역 내 모임 조회. min/max 뒤바뀌어 와도 보정. created_at 내림차순."""
+    meetups = get_meetups_in_bbox(db, min_lat, min_lng, max_lat, max_lng)
+    return [_meetup_to_response(m) for m in meetups]
 
 
 @router.get("/{meetup_id}", response_model=MeetupResponse)
