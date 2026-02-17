@@ -16,8 +16,10 @@ from app.models.base import Base
 from app.database import DATABASE_URL
 
 
-# 모델 임포트로 Base.metadata에 meetups 등 등록
+# 모델 임포트로 Base.metadata에 테이블 등록
 import app.models.meetup  # noqa: F401
+import app.models.user  # noqa: F401
+import app.models.participation  # noqa: F401
 
 config = context.config
 if config.config_file_name is not None:

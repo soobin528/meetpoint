@@ -16,5 +16,6 @@ class Meetup(Base):
     title = Column(String(100), nullable=False)  # 제목
     description = Column(Text, nullable=True)  # 설명(선택)
     capacity = Column(Integer, nullable=False, default=10)  # 최대 인원
+    current_count = Column(Integer, nullable=False, default=0)  # 현재 참여 인원 (동시성은 FOR UPDATE로 보장)
     location = Column(Geometry(geometry_type="POINT", srid=4326), nullable=False)  # WGS84 좌표
     created_at = Column(DateTime(timezone=True), server_default=func.now())  # 생성 시각(타임존 포함)

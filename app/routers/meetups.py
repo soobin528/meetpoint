@@ -10,9 +10,11 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.crud.meetup_crud import get_meetups_in_bbox
+from app.crud.participation_crud import JoinError, LeaveError, join_meetup, leave_meetup
 from app.database import get_db
 from app.models.meetup import Meetup
 from app.schemas.meetup import MeetupCreate, MeetupResponse
+from app.schemas.participation import JoinLeaveBody
 
 router = APIRouter(prefix="/meetups", tags=["Meetups"])
 
@@ -96,3 +98,26 @@ def get_meetup(meetup_id: int, db: Session = Depends(get_db)) -> MeetupResponse:
     if meetup is None:
         raise HTTPException(status_code=404, detail="Meetup not found")
     return _meetup_to_response(meetup)
+
+
+@router.post("/{meetup_id}/join")
+def post_join(meetup_id: int, body: JoinLeaveBody, db: Session = Depends(get_db)):
+    """모임 참여. 비관적 락으로 정원 초과 방지. 예외 시 rollback."""
+    try:
+        current_count = join_meetup(db, meetup_id, body.user_id)
+        return {"message": "joined", "current_count": current_count}
+    except JoinError as e:
+        # CRUD에서 IntegrityError를 이미 JoinError로 변환했으므로 라우터는 비즈니스 예외만 처리
+        db.rollback()
+        raise HTTPException(status_code=e.status_code, detail=e.message)
+
+
+@router.delete("/{meetup_id}/leave")
+def delete_leave(meetup_id: int, body: JoinLeaveBody, db: Session = Depends(get_db)):
+    """모임 참여 취소. 예외 시 rollback."""
+    try:
+        current_count = leave_meetup(db, meetup_id, body.user_id)
+        return {"message": "left", "current_count": current_count}
+    except LeaveError as e:
+        db.rollback()
+        raise HTTPException(status_code=e.status_code, detail=e.message)
