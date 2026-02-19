@@ -1,5 +1,10 @@
 # 참여/취소 CRUD (비관적 락으로 정원 초과 방지)
 
+import statistics
+from typing import Optional, Tuple
+
+from geoalchemy2 import WKTElement
+from shapely.geometry import Point
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
@@ -20,6 +25,51 @@ class LeaveError(Exception):
     def __init__(self, message: str, status_code: int = 400):
         self.message = message
         self.status_code = status_code
+
+
+def recalculate_midpoint(db: Session, meetup_id: int) -> Optional[Tuple[float, float]]:
+    """
+    참여자들의 approx_lat/lng 중앙값으로 중간지점 계산.
+    중앙값 사용 이유: 평균보다 이상치(Outlier)에 강해 공평한 장소 산출 가능.
+    
+    트랜잭션 소유권: 이 함수는 commit/rollback을 호출하지 않음.
+    호출자가 트랜잭션을 제어해야 함 (join/leave는 이미 commit 후 호출되므로 별도 처리 필요).
+    
+    반환: (lat, lng) 또는 None (유효한 좌표가 없으면).
+    """
+    # 효율성: 필요한 컬럼만 조회 (전체 Participation 객체 로드 방지)
+    # NULL 필터링: approx_lat 또는 approx_lng가 NULL이면 중앙값 계산 불가 → 둘 다 NOT NULL인 행만 사용
+    coords = db.query(Participation.approx_lat, Participation.approx_lng).filter(
+        Participation.meetup_id == meetup_id,
+        Participation.approx_lat.isnot(None),
+        Participation.approx_lng.isnot(None),
+    ).all()
+    
+    meetup = db.query(Meetup).filter(Meetup.id == meetup_id).first()
+    if not meetup:
+        return None
+    
+    if not coords:
+        # 유효한 좌표가 없으면 midpoint = null (호출자가 commit 처리)
+        # midpoint는 nullable이므로 None으로 설정 가능
+        meetup.midpoint = None
+        return None
+    
+    # coords가 비어있지 않으므로 median() 호출 안전
+    lats = [lat for lat, _ in coords]
+    lngs = [lng for _, lng in coords]
+    median_lat = statistics.median(lats)
+    median_lng = statistics.median(lngs)
+    
+    # Geometry(POINT, 4326) 형식으로 저장 → PostGIS 공간 쿼리/인덱스 활용 가능
+    pt = Point(median_lng, median_lat)
+    midpoint_wkt = WKTElement(pt.wkt, srid=4326)
+    
+    # meetup은 이미 위에서 조회했으므로 재사용
+    meetup.midpoint = midpoint_wkt
+    # 호출자가 commit 처리 (트랜잭션 소유권 분리)
+    
+    return (median_lat, median_lng)
 
 
 def join_meetup(db: Session, meetup_id: int, user_id: int) -> int:
@@ -45,6 +95,8 @@ def join_meetup(db: Session, meetup_id: int, user_id: int) -> int:
     try:
         db.add(Participation(meetup_id=meetup_id, user_id=user_id))
         meetup.current_count += 1
+        # 참여 후 중간지점 자동 재계산 (commit 전에 수행하여 같은 트랜잭션에 포함)
+        recalculate_midpoint(db, meetup_id)
         db.commit()
         db.refresh(meetup)
         return meetup.current_count
@@ -74,6 +126,8 @@ def leave_meetup(db: Session, meetup_id: int, user_id: int) -> int:
     # max(0, ...) 보정 제거: participation이 없으면 이미 위에서 에러 발생하므로 current_count는 논리적으로 음수가 될 수 없음
     db.delete(participation)
     meetup.current_count -= 1
+    # 취소 후 중간지점 자동 재계산 (commit 전에 수행하여 같은 트랜잭션에 포함)
+    recalculate_midpoint(db, meetup_id)
     db.commit()
     db.refresh(meetup)
     return meetup.current_count

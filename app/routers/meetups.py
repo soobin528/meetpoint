@@ -10,7 +10,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.crud.meetup_crud import get_meetups_in_bbox
-from app.crud.participation_crud import JoinError, LeaveError, join_meetup, leave_meetup
+from app.crud.participation_crud import JoinError, LeaveError, join_meetup, leave_meetup, recalculate_midpoint
 from app.database import get_db
 from app.models.meetup import Meetup
 from app.schemas.meetup import MeetupCreate, MeetupResponse
@@ -121,3 +121,25 @@ def delete_leave(meetup_id: int, body: JoinLeaveBody, db: Session = Depends(get_
     except LeaveError as e:
         db.rollback()
         raise HTTPException(status_code=e.status_code, detail=e.message)
+
+
+@router.post("/{meetup_id}/midpoint/recalculate")
+def post_recalculate_midpoint(meetup_id: int, db: Session = Depends(get_db)):
+    """중간지점 수동 재계산. 참여자들의 approx_lat/lng 중앙값으로 계산."""
+    meetup = db.query(Meetup).filter(Meetup.id == meetup_id).first()
+    if meetup is None:
+        raise HTTPException(status_code=404, detail="Meetup not found")
+    
+    try:
+        result = recalculate_midpoint(db, meetup_id)
+        db.commit()  # recalculate_midpoint는 commit하지 않으므로 호출자가 처리
+        # result가 None이면 유효한 좌표가 없어 midpoint = None으로 설정됨
+        if result is None:
+            return {"message": "recalculated", "midpoint": None, "reason": "No participants with coordinates"}
+        lat, lng = result
+        return {"message": "recalculated", "midpoint": {"lat": lat, "lng": lng}}
+    except Exception as e:
+        # 예외 발생 시 rollback하여 트랜잭션 일관성 유지
+        db.rollback()
+        # 디버깅을 위해 예외 정보 포함 (운영 환경에서는 로깅으로 대체)
+        raise HTTPException(status_code=500, detail=f"Failed to recalculate midpoint: {str(e)}")
