@@ -1,5 +1,4 @@
 # 모임 생성/조회 API
-
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -10,17 +9,27 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.crud.meetup_crud import get_meetups_in_bbox
-from app.crud.participation_crud import JoinError, LeaveError, join_meetup, leave_meetup, recalculate_midpoint
+from app.crud.participation_crud import (
+    JoinError,
+    LeaveError,
+    join_meetup,
+    leave_meetup,
+    recalculate_midpoint,
+)
 from app.database import get_db
 from app.models.meetup import Meetup
 from app.schemas.meetup import MeetupCreate, MeetupResponse
-from app.schemas.participation import JoinLeaveBody
+from app.schemas.participation import JoinBody, JoinLeaveBody
 
 router = APIRouter(prefix="/meetups", tags=["Meetups"])
 
 
 def _meetup_to_response(meetup: Meetup, distance_km: float | None = None) -> MeetupResponse:
     """location(Point)에서 lat/lng 추출해 MeetupResponse 생성. distance_km는 nearby 전용."""
+    if meetup.location is None:
+        # 데이터가 꼬인 경우 방어 (to_shape(None) 500 방지)
+        raise HTTPException(status_code=500, detail="Meetup location is missing")
+
     shape = to_shape(meetup.location)
     return MeetupResponse(
         id=meetup.id,
@@ -59,12 +68,12 @@ def get_meetups_nearby(
     db: Session = Depends(get_db),
 ) -> List[MeetupResponse]:
     """사용자 좌표 기준 반경 내 모임 검색. distance_km 포함, 가까운 순 정렬."""
-    # nearby만 거리 계산: 요청 좌표(lat,lng)가 있어야 의미 있고, 정렬·표시가 명확해짐
     pt = Point(lng, lat)
     user_geog = func.ST_GeogFromText(f"SRID=4326;{pt.wkt}")
     radius_m = radius_km * 1000
     loc_geog = func.ST_GeogFromText(func.ST_AsText(Meetup.location))
     distance_m = func.ST_Distance(loc_geog, user_geog)  # geography → 미터
+
     q = (
         db.query(Meetup, distance_m.label("distance_m"))
         .filter(func.ST_DWithin(loc_geog, user_geog, radius_m))
@@ -72,10 +81,7 @@ def get_meetups_nearby(
         .limit(limit)
     )
     rows = q.all()
-    return [
-        _meetup_to_response(m, distance_km=round(d / 1000.0, 6))
-        for m, d in rows
-    ]
+    return [_meetup_to_response(m, distance_km=round(d / 1000.0, 6)) for m, d in rows]
 
 
 @router.get("/bbox", response_model=List[MeetupResponse])
@@ -101,15 +107,20 @@ def get_meetup(meetup_id: int, db: Session = Depends(get_db)) -> MeetupResponse:
 
 
 @router.post("/{meetup_id}/join")
-def post_join(meetup_id: int, body: JoinLeaveBody, db: Session = Depends(get_db)):
-    """모임 참여. 비관적 락으로 정원 초과 방지. 예외 시 rollback."""
+def post_join(meetup_id: int, body: JoinBody, db: Session = Depends(get_db)):
+    """모임 참여. lat/lng는 approx에 저장되어 중간지점 계산에 사용. 예외 시 rollback."""
     try:
-        current_count = join_meetup(db, meetup_id, body.user_id)
+        current_count = join_meetup(db, meetup_id, body.user_id, body.lat, body.lng)
+        db.commit()  # ✅ 트랜잭션 소유권: 라우터
         return {"message": "joined", "current_count": current_count}
+
     except JoinError as e:
-        # CRUD에서 IntegrityError를 이미 JoinError로 변환했으므로 라우터는 비즈니스 예외만 처리
         db.rollback()
         raise HTTPException(status_code=e.status_code, detail=e.message)
+
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Failed to join meetup")
 
 
 @router.delete("/{meetup_id}/leave")
@@ -117,10 +128,16 @@ def delete_leave(meetup_id: int, body: JoinLeaveBody, db: Session = Depends(get_
     """모임 참여 취소. 예외 시 rollback."""
     try:
         current_count = leave_meetup(db, meetup_id, body.user_id)
+        db.commit()  # ✅ 트랜잭션 소유권: 라우터
         return {"message": "left", "current_count": current_count}
+
     except LeaveError as e:
         db.rollback()
         raise HTTPException(status_code=e.status_code, detail=e.message)
+
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Failed to leave meetup")
 
 
 @router.post("/{meetup_id}/midpoint/recalculate")
@@ -129,17 +146,21 @@ def post_recalculate_midpoint(meetup_id: int, db: Session = Depends(get_db)):
     meetup = db.query(Meetup).filter(Meetup.id == meetup_id).first()
     if meetup is None:
         raise HTTPException(status_code=404, detail="Meetup not found")
-    
+
     try:
         result = recalculate_midpoint(db, meetup_id)
-        db.commit()  # recalculate_midpoint는 commit하지 않으므로 호출자가 처리
-        # result가 None이면 유효한 좌표가 없어 midpoint = None으로 설정됨
+        db.commit()
+
         if result is None:
-            return {"message": "recalculated", "midpoint": None, "reason": "No participants with coordinates"}
+            return {
+                "message": "recalculated",
+                "midpoint": None,
+                "reason": "No participants with coordinates",
+            }
+
         lat, lng = result
         return {"message": "recalculated", "midpoint": {"lat": lat, "lng": lng}}
-    except Exception as e:
-        # 예외 발생 시 rollback하여 트랜잭션 일관성 유지
+
+    except Exception:
         db.rollback()
-        # 디버깅을 위해 예외 정보 포함 (운영 환경에서는 로깅으로 대체)
-        raise HTTPException(status_code=500, detail=f"Failed to recalculate midpoint: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to recalculate midpoint")

@@ -1,12 +1,11 @@
 # 참여/취소 CRUD (비관적 락으로 정원 초과 방지)
-
 import statistics
 from typing import Optional, Tuple
 
 from geoalchemy2 import WKTElement
 from shapely.geometry import Point
-from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
 
 from app.models.meetup import Meetup
 from app.models.participation import Participation
@@ -15,6 +14,7 @@ from app.models.user import User
 
 class JoinError(Exception):
     """참여 불가 (정원 초과 또는 이미 참여 중)."""
+
     def __init__(self, message: str, status_code: int = 400):
         self.message = message
         self.status_code = status_code
@@ -22,6 +22,7 @@ class JoinError(Exception):
 
 class LeaveError(Exception):
     """취소 불가 (참여 기록 없음 등)."""
+
     def __init__(self, message: str, status_code: int = 400):
         self.message = message
         self.status_code = status_code
@@ -30,104 +31,137 @@ class LeaveError(Exception):
 def recalculate_midpoint(db: Session, meetup_id: int) -> Optional[Tuple[float, float]]:
     """
     참여자들의 approx_lat/lng 중앙값으로 중간지점 계산.
-    중앙값 사용 이유: 평균보다 이상치(Outlier)에 강해 공평한 장소 산출 가능.
-    
-    트랜잭션 소유권: 이 함수는 commit/rollback을 호출하지 않음.
-    호출자가 트랜잭션을 제어해야 함 (join/leave는 이미 commit 후 호출되므로 별도 처리 필요).
-    
-    반환: (lat, lng) 또는 None (유효한 좌표가 없으면).
+
+    - median 사용 이유: mean 대비 outlier에 강건 → 더 공평한 중간 위치.
+    - NULL 안전: approx_lat/lng 둘 다 NOT NULL 인 행만 사용.
+    - 트랜잭션 소유권: 이 함수는 commit/rollback을 호출하지 않음 (호출자가 처리).
+    반환: (lat, lng) 또는 None
     """
-    # 효율성: 필요한 컬럼만 조회 (전체 Participation 객체 로드 방지)
-    # NULL 필터링: approx_lat 또는 approx_lng가 NULL이면 중앙값 계산 불가 → 둘 다 NOT NULL인 행만 사용
-    coords = db.query(Participation.approx_lat, Participation.approx_lng).filter(
-        Participation.meetup_id == meetup_id,
-        Participation.approx_lat.isnot(None),
-        Participation.approx_lng.isnot(None),
-    ).all()
-    
     meetup = db.query(Meetup).filter(Meetup.id == meetup_id).first()
     if not meetup:
         return None
-    
+
+    coords = (
+        db.query(Participation.approx_lat, Participation.approx_lng)
+        .filter(
+            Participation.meetup_id == meetup_id,
+            Participation.approx_lat.isnot(None),
+            Participation.approx_lng.isnot(None),
+        )
+        .all()
+    )
+
     if not coords:
-        # 유효한 좌표가 없으면 midpoint = null (호출자가 commit 처리)
-        # midpoint는 nullable이므로 None으로 설정 가능
         meetup.midpoint = None
         return None
-    
-    # coords가 비어있지 않으므로 median() 호출 안전
+
     lats = [lat for lat, _ in coords]
     lngs = [lng for _, lng in coords]
     median_lat = statistics.median(lats)
     median_lng = statistics.median(lngs)
-    
-    # Geometry(POINT, 4326) 형식으로 저장 → PostGIS 공간 쿼리/인덱스 활용 가능
+
+    # ✅ PostGIS POINT 저장 (주의: Point(lng, lat) 순서)
     pt = Point(median_lng, median_lat)
-    midpoint_wkt = WKTElement(pt.wkt, srid=4326)
-    
-    # meetup은 이미 위에서 조회했으므로 재사용
-    meetup.midpoint = midpoint_wkt
-    # 호출자가 commit 처리 (트랜잭션 소유권 분리)
-    
+    meetup.midpoint = WKTElement(pt.wkt, srid=4326)
+
     return (median_lat, median_lng)
 
 
-def join_meetup(db: Session, meetup_id: int, user_id: int) -> int:
+def join_meetup(db: Session, meetup_id: int, user_id: int, lat: float, lng: float) -> int:
     """
-    모임 참여. 비관적 락(FOR UPDATE)으로 동시 요청 시에도 정원 초과 방지.
-    반환: 갱신된 current_count.
+    모임 참여.
+
+    - FOR UPDATE로 meetup 행 잠금 → 동시 join 시에도 정원 초과 방지.
+    - 참여 시 좌표(lat,lng)를 approx_lat/approx_lng에 저장
+      (다음 단계에서 200m grid 익명화 적용 예정)
+
+    반환: 갱신된 current_count
+
+    ⚠️ 이 함수는 commit/rollback 하지 않음. 호출자(라우터)가 트랜잭션을 제어.
     """
     if db.query(User).filter(User.id == user_id).first() is None:
         raise JoinError("User not found", 404)
-    # 해당 행을 잠금 → 다른 트랜잭션은 이 행 갱신 전까지 대기 (정원 초과 방지)
-    meetup = db.query(Meetup).filter(Meetup.id == meetup_id).with_for_update().first()
+
+    meetup = (
+        db.query(Meetup)
+        .filter(Meetup.id == meetup_id)
+        .with_for_update()
+        .first()
+    )
     if meetup is None:
         raise JoinError("Meetup not found", 404)
+
     if meetup.current_count >= meetup.capacity:
-        raise JoinError("Meetup is full (capacity reached)")
-    existing = db.query(Participation).filter(
-        Participation.meetup_id == meetup_id,
-        Participation.user_id == user_id,
-    ).first()
+        raise JoinError("Meetup is full (capacity reached)", 400)
+
+    existing = (
+        db.query(Participation)
+        .filter(
+            Participation.meetup_id == meetup_id,
+            Participation.user_id == user_id,
+        )
+        .first()
+    )
     if existing is not None:
-        raise JoinError("Already joined this meetup")
+        raise JoinError("Already joined this meetup", 400)
 
     try:
-        db.add(Participation(meetup_id=meetup_id, user_id=user_id))
+        db.add(
+            Participation(
+                meetup_id=meetup_id,
+                user_id=user_id,
+                approx_lat=lat,
+                approx_lng=lng,
+            )
+        )
         meetup.current_count += 1
-        # 참여 후 중간지점 자동 재계산 (commit 전에 수행하여 같은 트랜잭션에 포함)
+
+        # ✅ 같은 트랜잭션 안에서 midpoint 재계산 (commit은 호출자가)
         recalculate_midpoint(db, meetup_id)
-        db.commit()
-        db.refresh(meetup)
+
         return meetup.current_count
+
     except IntegrityError:
-        # 동시에 같은 user가 join하면 SELECT 시점엔 없어도 INSERT 시 UniqueConstraint 위반 → 500 대신 400
-        # DB 에러는 CRUD에서 처리하고 JoinError로 변환 → 라우터는 비즈니스 예외만 처리 (책임 분리)
-        db.rollback()
+        # 동시에 같은 user가 join하면 UniqueConstraint 위반 가능
+        # rollback은 호출자(라우터)에서 수행
         raise JoinError("Already joined", 400)
 
 
 def leave_meetup(db: Session, meetup_id: int, user_id: int) -> int:
     """
-    모임 참여 취소. FOR UPDATE로 meetup 행 잠근 뒤 current_count 감소.
-    반환: 갱신된 current_count.
+    모임 참여 취소.
+
+    - FOR UPDATE로 meetup 행 잠금
+    - participation 삭제 후 current_count 감소
+    - 취소 후 midpoint 재계산
+
+    반환: 갱신된 current_count
+
+    ⚠️ 이 함수는 commit/rollback 하지 않음. 호출자(라우터)가 트랜잭션을 제어.
     """
-    meetup = db.query(Meetup).filter(Meetup.id == meetup_id).with_for_update().first()
+    meetup = (
+        db.query(Meetup)
+        .filter(Meetup.id == meetup_id)
+        .with_for_update()
+        .first()
+    )
     if meetup is None:
         raise LeaveError("Meetup not found", 404)
-    participation = db.query(Participation).filter(
-        Participation.meetup_id == meetup_id,
-        Participation.user_id == user_id,
-    ).first()
+
+    participation = (
+        db.query(Participation)
+        .filter(
+            Participation.meetup_id == meetup_id,
+            Participation.user_id == user_id,
+        )
+        .first()
+    )
     if participation is None:
         raise LeaveError("Not joined", 400)
 
-    # participation 존재 확인 후 삭제 → current_count 감소는 실제 삭제가 일어날 때만 수행
-    # max(0, ...) 보정 제거: participation이 없으면 이미 위에서 에러 발생하므로 current_count는 논리적으로 음수가 될 수 없음
     db.delete(participation)
     meetup.current_count -= 1
-    # 취소 후 중간지점 자동 재계산 (commit 전에 수행하여 같은 트랜잭션에 포함)
+
     recalculate_midpoint(db, meetup_id)
-    db.commit()
-    db.refresh(meetup)
+
     return meetup.current_count
