@@ -1,5 +1,6 @@
 # 참여/취소 CRUD (비관적 락으로 정원 초과 방지)
 import statistics
+import math
 from typing import Optional, Tuple
 
 from geoalchemy2 import WKTElement
@@ -10,6 +11,22 @@ from sqlalchemy.orm import Session
 from app.models.meetup import Meetup
 from app.models.participation import Participation
 from app.models.user import User
+
+# 200m 그리드 익명화: 정확한 위치 저장 방지(프라이버시), approx에 저장해 중간지점/POI 계산은 그대로 활용
+GRID_METERS = 200
+GRID_DEG = 0.0018  # 위도·경도 약 200m (위도 기준 근사)
+
+
+def _snap_to_grid(lat: float, lng: float) -> Tuple[float, float]:
+    """
+    좌표를 약 200m 그리드로 스냅. 정밀 추적 방지(프라이버시), approx 필드에 저장해 midpoint/POI는 그대로 사용.
+
+    검증: SELECT approx_lat, approx_lng FROM participations WHERE meetup_id = X;
+    → 0.0018의 배수로 저장된 값이 보이면 정상.
+    """
+    grid_lat = math.floor(lat / GRID_DEG) * GRID_DEG
+    grid_lng = math.floor(lng / GRID_DEG) * GRID_DEG
+    return (grid_lat, grid_lng)
 
 
 class JoinError(Exception):
@@ -72,8 +89,7 @@ def join_meetup(db: Session, meetup_id: int, user_id: int, lat: float, lng: floa
     모임 참여.
 
     - FOR UPDATE로 meetup 행 잠금 → 동시 join 시에도 정원 초과 방지.
-    - 참여 시 좌표(lat,lng)를 approx_lat/approx_lng에 저장
-      (다음 단계에서 200m grid 익명화 적용 예정)
+    - 참여 시 좌표를 200m 그리드로 스냅 후 approx_lat/approx_lng에 저장 (프라이버시 보호, 중간지점/POI는 approx 기준 유지).
 
     반환: 갱신된 current_count
 
@@ -105,13 +121,16 @@ def join_meetup(db: Session, meetup_id: int, user_id: int, lat: float, lng: floa
     if existing is not None:
         raise JoinError("Already joined this meetup", 400)
 
+    # 200m 그리드로 스냅 후 저장 → 정확한 위치 노출 방지, midpoint/POI는 approx 기준으로 동작
+    grid_lat, grid_lng = _snap_to_grid(lat, lng)
+
     try:
         db.add(
             Participation(
                 meetup_id=meetup_id,
                 user_id=user_id,
-                approx_lat=lat,
-                approx_lng=lng,
+                approx_lat=grid_lat,
+                approx_lng=grid_lng,
             )
         )
         meetup.current_count += 1
