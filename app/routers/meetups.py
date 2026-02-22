@@ -1,7 +1,8 @@
 # 모임 생성/조회 API
-from typing import List
+from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from geoalchemy2 import WKTElement
 from geoalchemy2.shape import to_shape
 from shapely.geometry import Point
@@ -18,10 +19,19 @@ from app.crud.participation_crud import (
 )
 from app.database import get_db
 from app.models.meetup import Meetup
+from app.realtime.sse_pubsub import publish_midpoint_update, stream_midpoint_events
 from app.schemas.meetup import MeetupCreate, MeetupResponse
 from app.schemas.participation import JoinBody, JoinLeaveBody
 
 router = APIRouter(prefix="/meetups", tags=["Meetups"])
+
+
+def _midpoint_to_dict(meetup: Meetup) -> Optional[Dict[str, float]]:
+    """midpoint Geometry → {lat, lng} 또는 None (SSE/Redis 발행용)."""
+    if meetup.midpoint is None:
+        return None
+    shape = to_shape(meetup.midpoint)
+    return {"lat": shape.y, "lng": shape.x}
 
 
 def _meetup_to_response(meetup: Meetup, distance_km: float | None = None) -> MeetupResponse:
@@ -107,11 +117,15 @@ def get_meetup(meetup_id: int, db: Session = Depends(get_db)) -> MeetupResponse:
 
 
 @router.post("/{meetup_id}/join")
-def post_join(meetup_id: int, body: JoinBody, db: Session = Depends(get_db)):
+async def post_join(meetup_id: int, body: JoinBody, db: Session = Depends(get_db)):
     """모임 참여. lat/lng는 approx에 저장되어 중간지점 계산에 사용. 예외 시 rollback."""
     try:
         current_count = join_meetup(db, meetup_id, body.user_id, body.lat, body.lng)
         db.commit()  # ✅ 트랜잭션 소유권: 라우터
+        # commit 후 midpoint 갱신 → SSE 구독자에게 실시간 푸시
+        meetup = db.query(Meetup).filter(Meetup.id == meetup_id).first()
+        if meetup:
+            await publish_midpoint_update(meetup_id, _midpoint_to_dict(meetup))
         return {"message": "joined", "current_count": current_count}
 
     except JoinError as e:
@@ -124,11 +138,15 @@ def post_join(meetup_id: int, body: JoinBody, db: Session = Depends(get_db)):
 
 
 @router.delete("/{meetup_id}/leave")
-def delete_leave(meetup_id: int, body: JoinLeaveBody, db: Session = Depends(get_db)):
+async def delete_leave(meetup_id: int, body: JoinLeaveBody, db: Session = Depends(get_db)):
     """모임 참여 취소. 예외 시 rollback."""
     try:
         current_count = leave_meetup(db, meetup_id, body.user_id)
         db.commit()  # ✅ 트랜잭션 소유권: 라우터
+        # commit 후 midpoint 갱신 → SSE 구독자에게 실시간 푸시
+        meetup = db.query(Meetup).filter(Meetup.id == meetup_id).first()
+        if meetup:
+            await publish_midpoint_update(meetup_id, _midpoint_to_dict(meetup))
         return {"message": "left", "current_count": current_count}
 
     except LeaveError as e:
@@ -164,3 +182,17 @@ def post_recalculate_midpoint(meetup_id: int, db: Session = Depends(get_db)):
     except Exception:
         db.rollback()
         raise HTTPException(status_code=500, detail="Failed to recalculate midpoint")
+
+
+@router.get("/{meetup_id}/midpoint/stream")
+async def get_midpoint_stream(meetup_id: int):
+    """SSE: 해당 모임의 midpoint 갱신 이벤트 실시간 스트림. join/leave 시 midpoint_updated 수신."""
+    return StreamingResponse(
+        stream_midpoint_events(meetup_id),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
