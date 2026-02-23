@@ -15,6 +15,15 @@ class MeetupCreate(BaseModel):
     lng: float = Field(..., ge=-180, le=180)
 
 
+class ConfirmPoiBody(BaseModel):
+    """POI 확정 요청 (호스트가 선택한 장소 저장·실시간 브로드캐스트)."""
+
+    name: str = Field(..., min_length=1, max_length=200)
+    lat: float = Field(..., ge=-90, le=90)
+    lng: float = Field(..., ge=-180, le=180)
+    address: str = Field(..., max_length=300)
+
+
 class MeetupResponse(BaseModel):
     """모임 응답 (ORM 호환)."""
 

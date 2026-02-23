@@ -44,6 +44,7 @@ services:
       - redis
     env_file:
       - .env
+      
     ports:
       # FastAPI 앱 외부 노출 포트
       - "8000:8000"
@@ -53,6 +54,8 @@ services:
       #   /app/app/main.py  에서  "app.main:app" 을 바라보도록 맞추기 위해
       #   로컬 ./app  → 컨테이너 /app/app 으로 마운트
       - ./app:/app/app
+      # Alembic 마이그레이션: 로컬에서 추가한 005 등이 재빌드 없이 컨테이너에 반영되도록
+      - ./alembic:/app/alembic
     command: >
       uvicorn app.main:app
       --host 0.0.0.0

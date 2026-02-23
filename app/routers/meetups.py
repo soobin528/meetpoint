@@ -1,4 +1,5 @@
 # 모임 생성/조회 API
+from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -19,9 +20,10 @@ from app.crud.participation_crud import (
 )
 from app.database import get_db
 from app.models.meetup import Meetup
-from app.realtime.sse_pubsub import publish_midpoint_update, stream_midpoint_events
-from app.schemas.meetup import MeetupCreate, MeetupResponse
+from app.realtime.sse_pubsub import publish_midpoint_update, publish_poi_confirmed, stream_midpoint_events
+from app.schemas.meetup import ConfirmPoiBody, MeetupCreate, MeetupResponse
 from app.schemas.participation import JoinBody, JoinLeaveBody
+from app.services.poi_service import get_pois_for_meetup
 
 router = APIRouter(prefix="/meetups", tags=["Meetups"])
 
@@ -184,9 +186,73 @@ def post_recalculate_midpoint(meetup_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail="Failed to recalculate midpoint")
 
 
+@router.post("/{meetup_id}/confirm-poi")
+async def post_confirm_poi(
+    meetup_id: int,
+    body: ConfirmPoiBody,
+    db: Session = Depends(get_db),
+):
+    """호스트가 선택한 POI를 확정 저장 후 실시간으로 poi_confirmed 이벤트 발행."""
+    meetup = db.query(Meetup).filter(Meetup.id == meetup_id).first()
+    if meetup is None:
+        raise HTTPException(status_code=404, detail="모임을 찾을 수 없습니다.")
+    try:
+        meetup.confirmed_poi_name = body.name
+        meetup.confirmed_poi_lat = body.lat
+        meetup.confirmed_poi_lng = body.lng
+        meetup.confirmed_poi_address = body.address
+        meetup.confirmed_at = datetime.now(timezone.utc)
+        db.commit()
+        db.refresh(meetup)
+        # commit 성공 후 Redis로 poi_confirmed 발행 (SSE 구독자에게 전달)
+        poi_payload = {
+            "name": meetup.confirmed_poi_name,
+            "lat": meetup.confirmed_poi_lat,
+            "lng": meetup.confirmed_poi_lng,
+            "address": meetup.confirmed_poi_address or "",
+        }
+        await publish_poi_confirmed(meetup_id, poi_payload)
+        return {
+            "message": "POI가 확정되었습니다.",
+            "poi": poi_payload,
+            "confirmed_at": meetup.confirmed_at.isoformat() if meetup.confirmed_at else None,
+        }
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="POI 확정 처리에 실패했습니다.")
+
+
+@router.get("/{meetup_id}/pois")
+async def get_meetup_pois(
+    meetup_id: int,
+    force: bool = Query(False, description="true면 갱신 제한 무시하고 Kakao 재조회"),
+    db: Session = Depends(get_db),
+):
+    """중간지점 기준 주변 POI 추천 (Kakao Local). Redis 캐시·갱신 제한 적용. force=true 시 강제 갱신."""
+    meetup = db.query(Meetup).filter(Meetup.id == meetup_id).first()
+    if meetup is None:
+        raise HTTPException(status_code=404, detail="모임을 찾을 수 없습니다.")
+    midpoint_dict = _midpoint_to_dict(meetup)
+    if midpoint_dict is None:
+        raise HTTPException(
+            status_code=400,
+            detail="중간지점이 없습니다. 참여자가 1명 이상이고 좌표가 있어야 합니다.",
+        )
+    try:
+        pois = await get_pois_for_meetup(
+            meetup_id,
+            midpoint_dict["lat"],
+            midpoint_dict["lng"],
+            force=force,
+        )
+        return pois
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
 @router.get("/{meetup_id}/midpoint/stream")
 async def get_midpoint_stream(meetup_id: int):
-    """SSE: 해당 모임의 midpoint 갱신 이벤트 실시간 스트림. join/leave 시 midpoint_updated 수신."""
+    """SSE: 해당 모임의 midpoint/poi 갱신 이벤트 실시간 스트림 (midpoint_updated, poi_updated)."""
     return StreamingResponse(
         stream_midpoint_events(meetup_id),
         media_type="text/event-stream",
