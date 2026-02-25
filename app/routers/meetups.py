@@ -19,9 +19,14 @@ from app.crud.participation_crud import (
     recalculate_midpoint,
 )
 from app.database import get_db
-from app.models.meetup import Meetup
-from app.realtime.sse_pubsub import publish_midpoint_update, publish_poi_confirmed, stream_midpoint_events
-from app.schemas.meetup import ConfirmPoiBody, MeetupCreate, MeetupResponse
+from app.models.meetup import Meetup, MeetupStatus
+from app.realtime.sse_pubsub import (
+    publish_midpoint_update,
+    publish_meetup_status_changed,
+    publish_poi_confirmed,
+    stream_midpoint_events,
+)
+from app.schemas.meetup import ConfirmPoiBody, ConfirmedPoiSchema, MeetupCreate, MeetupResponse
 from app.schemas.participation import JoinBody, JoinLeaveBody
 from app.services.poi_service import get_pois_for_meetup
 
@@ -36,6 +41,19 @@ def _midpoint_to_dict(meetup: Meetup) -> Optional[Dict[str, float]]:
     return {"lat": shape.y, "lng": shape.x}
 
 
+def _confirmed_poi_schema(meetup: Meetup) -> Optional[ConfirmedPoiSchema]:
+    """confirmed_poi_* + confirmed_at → ConfirmedPoiSchema 또는 None."""
+    if meetup.confirmed_poi_name is None and meetup.confirmed_poi_lat is None:
+        return None
+    return ConfirmedPoiSchema(
+        name=meetup.confirmed_poi_name or "",
+        lat=meetup.confirmed_poi_lat or 0.0,
+        lng=meetup.confirmed_poi_lng or 0.0,
+        address=meetup.confirmed_poi_address or "",
+        confirmed_at=meetup.confirmed_at,
+    )
+
+
 def _meetup_to_response(meetup: Meetup, distance_km: float | None = None) -> MeetupResponse:
     """location(Point)에서 lat/lng 추출해 MeetupResponse 생성. distance_km는 nearby 전용."""
     if meetup.location is None:
@@ -43,13 +61,20 @@ def _meetup_to_response(meetup: Meetup, distance_km: float | None = None) -> Mee
         raise HTTPException(status_code=500, detail="Meetup location is missing")
 
     shape = to_shape(meetup.location)
+    status_val = meetup.status if isinstance(meetup.status, str) else (meetup.status or MeetupStatus.RECRUITING.value)
+    if hasattr(status_val, "value"):
+        status_val = status_val.value
     return MeetupResponse(
         id=meetup.id,
+        status=status_val,
         title=meetup.title,
         description=meetup.description,
         capacity=meetup.capacity,
+        current_count=meetup.current_count,
         lat=shape.y,
         lng=shape.x,
+        midpoint=_midpoint_to_dict(meetup),
+        confirmed_poi=_confirmed_poi_schema(meetup),
         distance_km=distance_km,
     )
 
@@ -192,19 +217,23 @@ async def post_confirm_poi(
     body: ConfirmPoiBody,
     db: Session = Depends(get_db),
 ):
-    """호스트가 선택한 POI를 확정 저장 후 실시간으로 poi_confirmed 이벤트 발행."""
+    """호스트가 선택한 POI를 확정 저장 후 status=CONFIRMED, 실시간 이벤트 발행. 이미 확정 시 409."""
     meetup = db.query(Meetup).filter(Meetup.id == meetup_id).first()
     if meetup is None:
         raise HTTPException(status_code=404, detail="모임을 찾을 수 없습니다.")
+    current_status = meetup.status if isinstance(meetup.status, str) else getattr(meetup.status, "value", meetup.status)
+    if current_status == MeetupStatus.CONFIRMED.value:
+        raise HTTPException(status_code=409, detail="Already confirmed")
     try:
         meetup.confirmed_poi_name = body.name
         meetup.confirmed_poi_lat = body.lat
         meetup.confirmed_poi_lng = body.lng
         meetup.confirmed_poi_address = body.address
         meetup.confirmed_at = datetime.now(timezone.utc)
+        meetup.status = MeetupStatus.CONFIRMED.value
         db.commit()
         db.refresh(meetup)
-        # commit 성공 후 Redis로 poi_confirmed 발행 (SSE 구독자에게 전달)
+        # commit 성공 후 Redis 발행: poi_confirmed + meetup_status_changed (SSE 구독자에게 전달)
         poi_payload = {
             "name": meetup.confirmed_poi_name,
             "lat": meetup.confirmed_poi_lat,
@@ -212,10 +241,12 @@ async def post_confirm_poi(
             "address": meetup.confirmed_poi_address or "",
         }
         await publish_poi_confirmed(meetup_id, poi_payload)
+        await publish_meetup_status_changed(meetup_id, MeetupStatus.CONFIRMED.value)
         return {
             "message": "POI가 확정되었습니다.",
             "poi": poi_payload,
             "confirmed_at": meetup.confirmed_at.isoformat() if meetup.confirmed_at else None,
+            "status": MeetupStatus.CONFIRMED.value,
         }
     except Exception:
         db.rollback()

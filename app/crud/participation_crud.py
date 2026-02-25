@@ -8,7 +8,7 @@ from shapely.geometry import Point
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.models.meetup import Meetup
+from app.models.meetup import Meetup, MeetupStatus
 from app.models.participation import Participation
 from app.models.user import User
 
@@ -107,6 +107,10 @@ def join_meetup(db: Session, meetup_id: int, user_id: int, lat: float, lng: floa
     if meetup is None:
         raise JoinError("Meetup not found", 404)
 
+    status_val = meetup.status if isinstance(meetup.status, str) else getattr(meetup.status, "value", meetup.status)
+    if status_val == MeetupStatus.CONFIRMED.value:
+        raise JoinError("Meetup already confirmed; joining/leaving is not allowed", 409)
+
     if meetup.current_count >= meetup.capacity:
         raise JoinError("Meetup is full (capacity reached)", 400)
 
@@ -166,6 +170,10 @@ def leave_meetup(db: Session, meetup_id: int, user_id: int) -> int:
     )
     if meetup is None:
         raise LeaveError("Meetup not found", 404)
+
+    status_val = meetup.status if isinstance(meetup.status, str) else getattr(meetup.status, "value", meetup.status)
+    if status_val == MeetupStatus.CONFIRMED.value:
+        raise LeaveError("Meetup already confirmed; joining/leaving is not allowed", 409)
 
     participation = (
         db.query(Participation)

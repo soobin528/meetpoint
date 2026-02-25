@@ -1,10 +1,25 @@
 # Meetup 모델: 즉흥 모임 엔티티
 
+from enum import Enum as PyEnum
+
 from sqlalchemy import Column, Float, Integer, String, Text, DateTime
 from sqlalchemy.sql import func
 from geoalchemy2 import Geometry
 
 from app.models.base import Base
+
+
+class MeetupStatus(str, PyEnum):
+    """모임 상태. RECRUITING → CONFIRMED(확정) 후 join/leave 불가."""
+
+    RECRUITING = "RECRUITING"
+    CONFIRMED = "CONFIRMED"
+    FINISHED = "FINISHED"
+    CANCELED = "CANCELED"
+
+
+# DB에는 String(20)으로 저장 (마이그레이션 단순화). 앱에서는 MeetupStatus로 비교.
+STATUS_DEFAULT = MeetupStatus.RECRUITING.value
 
 
 class Meetup(Base):
@@ -13,6 +28,7 @@ class Meetup(Base):
     __tablename__ = "meetups"
 
     id = Column(Integer, primary_key=True, index=True)
+    status = Column(String(20), nullable=False, default=STATUS_DEFAULT, server_default=STATUS_DEFAULT)
     title = Column(String(100), nullable=False)  # 제목
     description = Column(Text, nullable=True)  # 설명(선택)
     capacity = Column(Integer, nullable=False, default=10)  # 최대 인원

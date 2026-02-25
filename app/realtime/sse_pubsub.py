@@ -78,6 +78,20 @@ async def publish_poi_confirmed(
         pass
 
 
+async def publish_meetup_status_changed(meetup_id: int, status: str) -> None:
+    """모임 상태 변경 시 meetup:{id}:poi 채널로 발행 → SSE에서 event: meetup_status_changed 로 전달."""
+    payload = {
+        "type": "meetup_status_changed",
+        "meetup_id": meetup_id,
+        "status": status,
+        "ts": datetime.now(timezone.utc).isoformat(),
+    }
+    try:
+        await redis_client.publish(_channel_poi(meetup_id), json.dumps(payload))
+    except Exception:
+        pass
+
+
 async def stream_midpoint_events(meetup_id: int) -> AsyncGenerator[str, None]:
     """
     GET /meetups/{id}/midpoint/stream 용.
@@ -101,10 +115,16 @@ async def stream_midpoint_events(meetup_id: int) -> AsyncGenerator[str, None]:
                 data = message.get("data") or ""
                 ch = message.get("channel") or ""
                 if ch == channel_poi:
-                    # poi 채널: payload의 type에 따라 poi_confirmed / poi_updated 구분
+                    # poi 채널: payload의 type에 따라 poi_confirmed / meetup_status_changed / poi_updated 구분
                     try:
                         parsed = json.loads(data)
-                        event_name = "poi_confirmed" if parsed.get("type") == "poi_confirmed" else "poi_updated"
+                        t = parsed.get("type")
+                        if t == "meetup_status_changed":
+                            event_name = "meetup_status_changed"
+                        elif t == "poi_confirmed":
+                            event_name = "poi_confirmed"
+                        else:
+                            event_name = "poi_updated"
                     except Exception:
                         event_name = "poi_updated"
                 else:

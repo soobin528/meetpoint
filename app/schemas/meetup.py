@@ -1,8 +1,11 @@
 # 모임 API 요청/응답 스키마
 
-from typing import Optional
+from datetime import datetime
+from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
+
+MeetupStatusLiteral = Literal["RECRUITING", "CONFIRMED", "FINISHED", "CANCELED"]
 
 
 class MeetupCreate(BaseModel):
@@ -24,16 +27,30 @@ class ConfirmPoiBody(BaseModel):
     address: str = Field(..., max_length=300)
 
 
+class ConfirmedPoiSchema(BaseModel):
+    """확정된 POI (호스트가 선택한 최종 장소)."""
+
+    name: str
+    lat: float
+    lng: float
+    address: str
+    confirmed_at: Optional[datetime] = None
+
+
 class MeetupResponse(BaseModel):
     """모임 응답 (ORM 호환)."""
 
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    status: MeetupStatusLiteral = "RECRUITING"
     title: str
     description: Optional[str] = None
     capacity: int
+    current_count: int = 0
     lat: float
     lng: float
+    midpoint: Optional[dict] = None  # {"lat": float, "lng": float} or null
+    confirmed_poi: Optional[ConfirmedPoiSchema] = None
     # nearby에서만 의미 있음(사용자 위치 기준 거리). 단건 조회는 기준점이 없어 None.
     distance_km: Optional[float] = None
