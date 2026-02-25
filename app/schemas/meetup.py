@@ -28,7 +28,7 @@ class ConfirmPoiBody(BaseModel):
 
 
 class ConfirmedPoiSchema(BaseModel):
-    """확정된 POI (호스트가 선택한 최종 장소)."""
+    """확정된 POI (호스트가 선택한 최종 장소). (기존 응답용: nearby/bbox 등에서 사용)"""
 
     name: str
     lat: float
@@ -38,7 +38,7 @@ class ConfirmedPoiSchema(BaseModel):
 
 
 class MeetupResponse(BaseModel):
-    """모임 응답 (ORM 호환)."""
+    """모임 응답 (nearby/bbox 등 간략 응답)."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -54,3 +54,37 @@ class MeetupResponse(BaseModel):
     confirmed_poi: Optional[ConfirmedPoiSchema] = None
     # nearby에서만 의미 있음(사용자 위치 기준 거리). 단건 조회는 기준점이 없어 None.
     distance_km: Optional[float] = None
+
+
+class MidpointOut(BaseModel):
+    """단건 조회용 midpoint DTO."""
+
+    lat: float
+    lng: float
+
+
+class ConfirmedPoiOut(BaseModel):
+    """단건 조회용 confirmed_poi DTO."""
+
+    name: str
+    lat: float
+    lng: float
+    address: str
+    confirmed_at: datetime
+
+
+class MeetupDetailOut(BaseModel):
+    """GET /meetups/{id} 전용 상세 응답 DTO."""
+
+    id: int
+    status: MeetupStatusLiteral
+    title: str
+    description: Optional[str] = None
+    capacity: int
+    current_count: int
+    lat: float
+    lng: float
+    midpoint: Optional[MidpointOut] = None
+    confirmed_poi: Optional[ConfirmedPoiOut] = None
+    distance_km: Optional[float] = None
+

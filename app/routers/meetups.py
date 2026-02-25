@@ -26,7 +26,16 @@ from app.realtime.sse_pubsub import (
     publish_poi_confirmed,
     stream_midpoint_events,
 )
-from app.schemas.meetup import ConfirmPoiBody, ConfirmedPoiSchema, MeetupCreate, MeetupResponse
+from app.schemas.meetup import (
+    ConfirmPoiBody,
+    ConfirmedPoiOut,
+    ConfirmedPoiSchema,
+    MeetupCreate,
+    MeetupDetailOut,
+    MeetupResponse,
+    MeetupStatusLiteral,
+    MidpointOut,
+)
 from app.schemas.participation import JoinBody, JoinLeaveBody
 from app.services.poi_service import get_pois_for_meetup
 
@@ -54,6 +63,40 @@ def _confirmed_poi_schema(meetup: Meetup) -> Optional[ConfirmedPoiSchema]:
     )
 
 
+def _midpoint_to_out(meetup: Meetup) -> Optional[MidpointOut]:
+    """단건 조회용 midpoint DTO."""
+    data = _midpoint_to_dict(meetup)
+    if data is None:
+        return None
+    return MidpointOut(**data)
+
+
+def _confirmed_poi_out(meetup: Meetup) -> Optional[ConfirmedPoiOut]:
+    """단건 조회용 confirmed_poi DTO. confirmed_at 이 없으면 None."""
+    if not meetup.confirmed_poi_name or meetup.confirmed_at is None:
+        return None
+    return ConfirmedPoiOut(
+        name=meetup.confirmed_poi_name,
+        lat=meetup.confirmed_poi_lat,
+        lng=meetup.confirmed_poi_lng,
+        address=meetup.confirmed_poi_address or "",
+        confirmed_at=meetup.confirmed_at,
+    )
+
+
+def _status_to_literal(meetup: Meetup) -> MeetupStatusLiteral:
+    """Meetup.status(ENUM/str/None)를 MeetupStatusLiteral 값으로 정규화."""
+    raw = getattr(meetup, "status", None)
+    # Enum 인스턴스인 경우 .value 사용
+    if hasattr(raw, "value"):
+        raw = raw.value  # type: ignore[assignment]
+    # None/빈 문자열 방어 및 허용 값 이외는 기본값 RECRUITING
+    allowed: set[MeetupStatusLiteral] = {"RECRUITING", "CONFIRMED", "FINISHED", "CANCELED"}
+    if not raw or raw not in allowed:
+        return "RECRUITING"
+    return raw  # type: ignore[return-value]
+
+
 def _meetup_to_response(meetup: Meetup, distance_km: float | None = None) -> MeetupResponse:
     """location(Point)에서 lat/lng 추출해 MeetupResponse 생성. distance_km는 nearby 전용."""
     if meetup.location is None:
@@ -61,9 +104,7 @@ def _meetup_to_response(meetup: Meetup, distance_km: float | None = None) -> Mee
         raise HTTPException(status_code=500, detail="Meetup location is missing")
 
     shape = to_shape(meetup.location)
-    status_val = meetup.status if isinstance(meetup.status, str) else (meetup.status or MeetupStatus.RECRUITING.value)
-    if hasattr(status_val, "value"):
-        status_val = status_val.value
+    status_val = _status_to_literal(meetup)
     return MeetupResponse(
         id=meetup.id,
         status=status_val,
@@ -134,13 +175,32 @@ def get_meetups_bbox(
     return [_meetup_to_response(m) for m in meetups]
 
 
-@router.get("/{meetup_id}", response_model=MeetupResponse)
-def get_meetup(meetup_id: int, db: Session = Depends(get_db)) -> MeetupResponse:
-    """id로 모임 조회. 없으면 404."""
+@router.get("/{meetup_id}", response_model=MeetupDetailOut)
+def get_meetup(meetup_id: int, db: Session = Depends(get_db)) -> MeetupDetailOut:
+    """id로 모임 조회. 없으면 404. 단건 상세 DTO 반환."""
     meetup = db.query(Meetup).filter(Meetup.id == meetup_id).first()
     if meetup is None:
         raise HTTPException(status_code=404, detail="Meetup not found")
-    return _meetup_to_response(meetup)
+
+    if meetup.location is None:
+        raise HTTPException(status_code=500, detail="Meetup location is missing")
+
+    shape = to_shape(meetup.location)
+    status_val = _status_to_literal(meetup)
+
+    return MeetupDetailOut(
+        id=meetup.id,
+        status=status_val,
+        title=meetup.title,
+        description=meetup.description,
+        capacity=meetup.capacity,
+        current_count=meetup.current_count,
+        lat=shape.y,
+        lng=shape.x,
+        midpoint=_midpoint_to_out(meetup),
+        confirmed_poi=_confirmed_poi_out(meetup),
+        distance_km=None,
+    )
 
 
 @router.post("/{meetup_id}/join")
