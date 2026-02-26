@@ -37,6 +37,7 @@ from app.schemas.meetup import (
     MidpointOut,
 )
 from app.schemas.participation import JoinBody, JoinLeaveBody
+from app.services.meetup_status import check_status_transition
 from app.services.poi_service import get_pois_for_meetup
 
 router = APIRouter(prefix="/meetups", tags=["Meetups"])
@@ -277,13 +278,14 @@ async def post_confirm_poi(
     body: ConfirmPoiBody,
     db: Session = Depends(get_db),
 ):
-    """호스트가 선택한 POI를 확정 저장 후 status=CONFIRMED, 실시간 이벤트 발행. 이미 확정 시 409."""
+    """호스트가 선택한 POI를 확정 저장 후 status=CONFIRMED, 실시간 이벤트 발행. 상태 전이: RECRUITING → CONFIRMED 만 허용."""
     meetup = db.query(Meetup).filter(Meetup.id == meetup_id).first()
     if meetup is None:
         raise HTTPException(status_code=404, detail="모임을 찾을 수 없습니다.")
-    current_status = meetup.status if isinstance(meetup.status, str) else getattr(meetup.status, "value", meetup.status)
-    if current_status == MeetupStatus.CONFIRMED.value:
-        raise HTTPException(status_code=409, detail="Already confirmed")
+    current_status = _status_to_literal(meetup)
+    err = check_status_transition(current_status, MeetupStatus.CONFIRMED.value)
+    if err:
+        raise HTTPException(status_code=409, detail=err)
     try:
         meetup.confirmed_poi_name = body.name
         meetup.confirmed_poi_lat = body.lat
@@ -311,6 +313,48 @@ async def post_confirm_poi(
     except Exception:
         db.rollback()
         raise HTTPException(status_code=500, detail="POI 확정 처리에 실패했습니다.")
+
+
+@router.post("/{meetup_id}/finish")
+async def post_finish_meetup(meetup_id: int, db: Session = Depends(get_db)):
+    """모임 종료. CONFIRMED → FINISHED 만 허용. DB 반영 후 meetup_status_changed 발행."""
+    meetup = db.query(Meetup).filter(Meetup.id == meetup_id).first()
+    if meetup is None:
+        raise HTTPException(status_code=404, detail="Meetup not found")
+    current_status = _status_to_literal(meetup)
+    err = check_status_transition(current_status, "FINISHED")
+    if err:
+        raise HTTPException(status_code=409, detail=err)
+    try:
+        meetup.status = "FINISHED"
+        db.commit()
+        db.refresh(meetup)
+        await publish_meetup_status_changed(meetup_id, "FINISHED")
+        return {"message": "Meetup finished.", "status": "FINISHED"}
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Failed to finish meetup")
+
+
+@router.post("/{meetup_id}/cancel")
+async def post_cancel_meetup(meetup_id: int, db: Session = Depends(get_db)):
+    """모임 취소. RECRUITING → CANCELED 만 허용. DB 반영 후 meetup_status_changed 발행."""
+    meetup = db.query(Meetup).filter(Meetup.id == meetup_id).first()
+    if meetup is None:
+        raise HTTPException(status_code=404, detail="Meetup not found")
+    current_status = _status_to_literal(meetup)
+    err = check_status_transition(current_status, "CANCELED")
+    if err:
+        raise HTTPException(status_code=409, detail=err)
+    try:
+        meetup.status = "CANCELED"
+        db.commit()
+        db.refresh(meetup)
+        await publish_meetup_status_changed(meetup_id, "CANCELED")
+        return {"message": "Meetup canceled.", "status": "CANCELED"}
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Failed to cancel meetup")
 
 
 @router.get("/{meetup_id}/pois")
