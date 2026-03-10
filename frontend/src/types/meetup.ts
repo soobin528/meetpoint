@@ -46,6 +46,8 @@ export interface MeetupDetailOut {
   midpoint: MidpointOut | null;
   confirmed_poi: ConfirmedPoiOut | null;
   distance_km: number | null;
-  /** Host can confirm POI, finish, cancel. TODO: backend to provide; until then treat as true for UI. */
+  /** Host can confirm POI, finish, cancel. */
   is_host?: boolean;
+  /** Whether current user is already participating in this meetup. */
+  is_participating?: boolean;
 }

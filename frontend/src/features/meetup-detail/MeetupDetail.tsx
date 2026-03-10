@@ -1,13 +1,11 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { meetupKeys, AbortRequestError } from '@/shared/api';
-import { ApiError } from '@/shared/api';
+import { meetupKeys, AbortRequestError, ApiError } from '@/shared/api';
 import { fetchMeetupDetail, joinMeetup, leaveMeetup, finishMeetup, cancelMeetup } from '@/features/meetup/api';
 import type { MeetupDetailOut, MeetupResponse, MeetupStatus } from '@/types';
-import { StatusBadge } from './StatusBadge';
-
-// TODO: Backend to provide is_host on MeetupDetailOut; until then treat current user as host for UI.
-const USE_IS_HOST_FROM_API = false;
+import { StatusBadge } from '@/features/meetup/components/StatusBadge';
+import { getMeetupActionAvailability } from '@/features/meetup/logic/actionAvailability';
+import { MeetupActionButtons } from '@/features/meetup/components/MeetupActionButtons';
 
 interface MeetupDetailProps {
   meetupId: number;
@@ -28,7 +26,8 @@ export function MeetupDetail({ meetupId, onClose }: MeetupDetailProps) {
     queryFn: () => fetchMeetupDetail(meetupId),
   });
 
-  const isHost = USE_IS_HOST_FROM_API ? (meetup?.is_host ?? true) : true;
+  const isHost = !!meetup?.is_host;
+  const isParticipating = !!meetup?.is_participating;
 
   const joinMutation = useMutation({
     mutationFn: () => joinMeetup(meetupId, { user_id: DEMO_USER_ID, lat: DEMO_LAT, lng: DEMO_LNG }),
@@ -106,17 +105,12 @@ export function MeetupDetail({ meetupId, onClose }: MeetupDetailProps) {
   }
 
   const status = meetup.status;
-  const canJoinOrLeave = status === 'RECRUITING';
-  const canConfirmPoi = status === 'RECRUITING' && isHost;
-  const canFinish = status === 'CONFIRMED' && isHost;
-  const canCancel = status === 'RECRUITING' && isHost;
-
-  const reasonText = getReasonText(status, isHost);
+  const availability = getMeetupActionAvailability(status, isHost, isParticipating);
 
   return (
     <div className="p-4">
       <div className="flex items-center justify-between gap-2">
-        <h2 className="font-semibold text-lg truncate">{meetup.title}</h2>
+        <h2 className="truncate text-lg font-semibold">{meetup.title}</h2>
         <StatusBadge status={status} />
       </div>
       {meetup.description && (
@@ -139,62 +133,21 @@ export function MeetupDetail({ meetupId, onClose }: MeetupDetailProps) {
         </div>
       )}
 
-      {reasonText && (
-        <p className="mt-2 text-xs text-slate-500">{reasonText}</p>
-      )}
-
-      <div className="mt-3 flex flex-wrap gap-2">
-        {canJoinOrLeave && (
-          <>
-            <button
-              type="button"
-              className="px-3 py-1.5 bg-emerald-600 text-white text-sm rounded hover:bg-emerald-700 disabled:opacity-50"
-              onClick={() => joinMutation.mutate()}
-              disabled={joinMutation.isPending}
-            >
-              참여
-            </button>
-            <button
-              type="button"
-              className="px-3 py-1.5 border border-slate-300 text-slate-700 text-sm rounded hover:bg-slate-50 disabled:opacity-50"
-              onClick={() => leaveMutation.mutate()}
-              disabled={leaveMutation.isPending}
-            >
-              참여 취소
-            </button>
-          </>
-        )}
-        {canConfirmPoi && (
-          <button
-            type="button"
-            className="px-3 py-1.5 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 disabled:opacity-50"
-            onClick={() => setInlineError('POI 확정은 POI 선택 후 별도 플로우에서 호출됩니다.')}
-            disabled
-          >
-            POI 확정 (준비 중)
-          </button>
-        )}
-        {canFinish && (
-          <button
-            type="button"
-            className="px-3 py-1.5 bg-slate-700 text-white text-sm rounded hover:bg-slate-800 disabled:opacity-50"
-            onClick={() => finishMutation.mutate()}
-            disabled={finishMutation.isPending}
-          >
-            모임 종료
-          </button>
-        )}
-        {canCancel && (
-          <button
-            type="button"
-            className="px-3 py-1.5 border border-red-400 text-red-700 text-sm rounded hover:bg-red-50 disabled:opacity-50"
-            onClick={() => cancelMutation.mutate()}
-            disabled={cancelMutation.isPending}
-          >
-            모임 취소
-          </button>
-        )}
-      </div>
+      <MeetupActionButtons
+        availability={availability}
+        loadingJoin={joinMutation.isPending}
+        loadingLeave={leaveMutation.isPending}
+        loadingConfirm={false}
+        loadingFinish={finishMutation.isPending}
+        loadingCancel={cancelMutation.isPending}
+        onJoin={() => joinMutation.mutate()}
+        onLeave={() => leaveMutation.mutate()}
+        onConfirmPlace={() =>
+          setInlineError('POI 확정은 POI 선택 후 별도 플로우에서 호출됩니다.')
+        }
+        onFinish={() => finishMutation.mutate()}
+        onCancel={() => cancelMutation.mutate()}
+      />
 
       <button
         type="button"
@@ -205,18 +158,6 @@ export function MeetupDetail({ meetupId, onClose }: MeetupDetailProps) {
       </button>
     </div>
   );
-}
-
-function getReasonText(status: MeetupStatus, isHost: boolean): string | null {
-  if (status === 'CONFIRMED') {
-    return '장소가 확정되어 참여/취소가 불가합니다.';
-  }
-  if (status === 'FINISHED') return '종료된 모임입니다.';
-  if (status === 'CANCELED') return '취소된 모임입니다.';
-  if (status === 'RECRUITING' && !isHost) {
-    return '호스트만 POI 확정·종료·취소할 수 있습니다.';
-  }
-  return null;
 }
 
 function patchCurrentCount(queryClient: ReturnType<typeof useQueryClient>, meetupId: number, currentCount: number) {
