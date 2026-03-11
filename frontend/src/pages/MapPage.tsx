@@ -15,12 +15,14 @@ import {
 import { MeetupBottomSheet, MeetupDetail } from '@/features/meetup-detail';
 import type { MeetupResponse } from '@/types';
 
+/** Fallback center when geolocation is unavailable (e.g. Gangnam). */
 const DEFAULT_CENTER: [number, number] = [37.5, 127.0];
 
 export function MapPage() {
   const [bbox, setBbox] = useState(DEFAULT_BBOX);
   const [zoom, setZoom] = useState(12);
-  const [center, setCenter] = useState<[number, number]>(DEFAULT_CENTER);
+  /** Set once when geolocation succeeds; applied to map one time only, then not synced again. */
+  const [userLocationToApply, setUserLocationToApply] = useState<[number, number] | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [selectedSummary, setSelectedSummary] = useState<MeetupResponse | null>(null);
   const lastMarkerClickAtRef = useRef(0);
@@ -42,11 +44,11 @@ export function MapPage() {
       (pos) => {
         const { latitude, longitude } = pos.coords;
         if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
-          setCenter([latitude, longitude]);
+          setUserLocationToApply([latitude, longitude]);
         }
       },
       () => {
-        // 실패/거부 시에는 기본 중심 유지
+        // 실패/거부 시 기본 중심 유지 (userLocationToApply stays null)
       },
       {
         enableHighAccuracy: true,
@@ -73,7 +75,11 @@ export function MapPage() {
       </header>
 
       <div className="flex-1 relative">
-        <MapView center={center} zoom={zoom}>
+        <MapView
+          initialCenter={DEFAULT_CENTER}
+          zoom={zoom}
+          userLocationToApply={userLocationToApply}
+        >
           <MapBBoxReporter onBBoxChange={setBbox} suppressNextRef={suppressNextMoveendRef} />
           <MapZoomReporter onZoomChange={setZoom} />
           <MapClickCloser
