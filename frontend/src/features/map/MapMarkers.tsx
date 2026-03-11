@@ -1,8 +1,9 @@
 import type { MutableRefObject } from 'react';
 import L from 'leaflet';
 import { useMap } from 'react-leaflet';
-import { Marker, Popup } from 'react-leaflet';
+import { Marker } from 'react-leaflet';
 import type { MapPoint, ClusterPoint, MeetupPoint } from './useClusters';
+import type { MeetupResponse } from '@/types';
 
 // Default marker icon for single meetups
 const defaultIcon = L.icon({
@@ -24,7 +25,8 @@ function createClusterIcon(count: number): L.DivIcon {
 
 interface MapMarkersProps {
   points: MapPoint[];
-  onSelectMeetup: (id: number) => void;
+  /** Called when a single meetup marker is clicked (Leaflet popup is not used). */
+  onSelectMeetup: (meetup: MeetupResponse) => void;
   onClusterClick?: (expansionZoom: number, lat: number, lng: number) => void;
   /** For mobile-safe background close: updated on marker/cluster clicks. */
   lastMarkerClickAtRef: MutableRefObject<number>;
@@ -77,12 +79,10 @@ export function MapMarkers({
             eventHandlers={{
               click: () => {
                 lastMarkerClickAtRef.current = Date.now();
-                onSelectMeetup(m.id);
+                onSelectMeetup(m.meetup);
               },
             }}
-          >
-            <Popup>{m.meetup.title}</Popup>
-          </Marker>
+          />
         );
       })}
     </>

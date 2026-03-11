@@ -13,11 +13,13 @@ import {
   DEFAULT_BBOX,
 } from '@/features/map';
 import { MeetupBottomSheet, MeetupDetail } from '@/features/meetup-detail';
+import type { MeetupResponse } from '@/types';
 
 export function MapPage() {
   const [bbox, setBbox] = useState(DEFAULT_BBOX);
   const [zoom, setZoom] = useState(12);
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [selectedSummary, setSelectedSummary] = useState<MeetupResponse | null>(null);
   const lastMarkerClickAtRef = useRef(0);
   const suppressNextMoveendRef = useRef(false);
 
@@ -30,12 +32,14 @@ export function MapPage() {
   const points = useClusters(meetups, bbox, zoom);
   useMeetupStream(selectedId);
 
-  const handleSelectMeetup = useCallback((id: number) => {
-    setSelectedId(id);
+  const handleSelectMeetup = useCallback((meetup: MeetupResponse) => {
+    setSelectedId(meetup.id);
+    setSelectedSummary(meetup);
   }, []);
 
   const handleCloseSheet = useCallback(() => {
     setSelectedId(null);
+    setSelectedSummary(null);
   }, []);
 
   return (

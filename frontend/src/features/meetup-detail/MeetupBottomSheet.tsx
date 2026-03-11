@@ -15,13 +15,13 @@ export function MeetupBottomSheet({ open, onClose, children, className }: Meetup
   return (
     <>
       <div
-        className="absolute inset-0 bg-black/30 z-10"
+        className="absolute inset-0 bg-black/30 z-[1000]"
         aria-hidden
         onClick={onClose}
       />
       <div
         className={clsx(
-          'absolute inset-x-0 bottom-0 bg-white rounded-t-2xl shadow-lg max-h-[55vh] overflow-auto z-20',
+          'absolute inset-x-0 bottom-0 bg-white rounded-t-2xl shadow-lg max-h-[55vh] overflow-auto z-[1010]',
           className
         )}
         role="dialog"
