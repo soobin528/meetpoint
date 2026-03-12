@@ -20,6 +20,7 @@ from app.crud.participation_crud import (
 )
 from app.database import get_db
 from app.models.meetup import Meetup, MeetupStatus
+from app.models.participation import Participation
 from app.realtime.sse_pubsub import (
     publish_midpoint_update,
     publish_meetup_status_changed,
@@ -177,7 +178,11 @@ def get_meetups_bbox(
 
 
 @router.get("/{meetup_id}", response_model=MeetupDetailOut)
-def get_meetup(meetup_id: int, db: Session = Depends(get_db)) -> MeetupDetailOut:
+def get_meetup(
+    meetup_id: int,
+    user_id: Optional[int] = Query(default=None, ge=1),
+    db: Session = Depends(get_db),
+) -> MeetupDetailOut:
     """id로 모임 조회. 없으면 404. 단건 상세 DTO 반환."""
     meetup = db.query(Meetup).filter(Meetup.id == meetup_id).first()
     if meetup is None:
@@ -188,6 +193,15 @@ def get_meetup(meetup_id: int, db: Session = Depends(get_db)) -> MeetupDetailOut
 
     shape = to_shape(meetup.location)
     status_val = _status_to_literal(meetup)
+
+    is_participating: Optional[bool] = None
+    if user_id is not None:
+        is_participating = (
+            db.query(Participation.id)
+            .filter(Participation.meetup_id == meetup_id, Participation.user_id == user_id)
+            .first()
+            is not None
+        )
 
     return MeetupDetailOut(
         id=meetup.id,
@@ -201,6 +215,7 @@ def get_meetup(meetup_id: int, db: Session = Depends(get_db)) -> MeetupDetailOut
         midpoint=_midpoint_to_out(meetup),
         confirmed_poi=_confirmed_poi_out(meetup),
         distance_km=None,
+        is_participating=is_participating,
     )
 
 

@@ -87,4 +87,6 @@ class MeetupDetailOut(BaseModel):
     midpoint: Optional[MidpointOut] = None
     confirmed_poi: Optional[ConfirmedPoiOut] = None
     distance_km: Optional[float] = None
+    # Optional user-context fields. Provided only when user_id is supplied.
+    is_participating: Optional[bool] = None
 

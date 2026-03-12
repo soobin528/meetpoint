@@ -19,8 +19,9 @@ export async function fetchMeetupsByBbox(
   return apiGet<MeetupResponse[]>(`${BASE}/bbox?${params}`, init);
 }
 
-export async function fetchMeetupDetail(id: number): Promise<MeetupDetailOut> {
-  return apiGet<MeetupDetailOut>(`${BASE}/${id}`);
+export async function fetchMeetupDetail(id: number, userId?: number): Promise<MeetupDetailOut> {
+  const params = userId != null ? `?${new URLSearchParams({ user_id: String(userId) })}` : '';
+  return apiGet<MeetupDetailOut>(`${BASE}/${id}${params}`);
 }
 
 export async function confirmPoi(

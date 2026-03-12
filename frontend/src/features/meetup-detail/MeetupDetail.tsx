@@ -23,7 +23,7 @@ export function MeetupDetail({ meetupId, onClose }: MeetupDetailProps) {
 
   const { data: meetup, isLoading, error: queryError } = useQuery({
     queryKey: meetupKeys.detail(meetupId),
-    queryFn: () => fetchMeetupDetail(meetupId),
+    queryFn: () => fetchMeetupDetail(meetupId, DEMO_USER_ID),
   });
 
   const isHost = !!meetup?.is_host;
@@ -33,7 +33,7 @@ export function MeetupDetail({ meetupId, onClose }: MeetupDetailProps) {
     mutationFn: () => joinMeetup(meetupId, { user_id: DEMO_USER_ID, lat: DEMO_LAT, lng: DEMO_LNG }),
     onSuccess: (data) => {
       // Update detail + all lists with new current_count; then refetch detail for full consistency.
-      patchCurrentCount(queryClient, meetupId, data.current_count);
+      patchCurrentCount(queryClient, meetupId, data.current_count, { is_participating: true });
       queryClient.invalidateQueries({ queryKey: meetupKeys.detail(meetupId) });
       setInlineError(null);
     },
@@ -46,7 +46,7 @@ export function MeetupDetail({ meetupId, onClose }: MeetupDetailProps) {
   const leaveMutation = useMutation({
     mutationFn: () => leaveMeetup(meetupId, { user_id: DEMO_USER_ID }),
     onSuccess: (data) => {
-      patchCurrentCount(queryClient, meetupId, data.current_count);
+      patchCurrentCount(queryClient, meetupId, data.current_count, { is_participating: false });
       queryClient.invalidateQueries({ queryKey: meetupKeys.detail(meetupId) });
       setInlineError(null);
     },
@@ -160,12 +160,15 @@ export function MeetupDetail({ meetupId, onClose }: MeetupDetailProps) {
   );
 }
 
-function patchCurrentCount(queryClient: ReturnType<typeof useQueryClient>, meetupId: number, currentCount: number) {
-  // Detail
+function patchCurrentCount(
+  queryClient: ReturnType<typeof useQueryClient>,
+  meetupId: number,
+  currentCount: number,
+  detailOverrides?: Partial<Pick<MeetupDetailOut, 'is_participating'>>
+) {
   queryClient.setQueryData<MeetupDetailOut | undefined>(meetupKeys.detail(meetupId), (prev) =>
-    prev ? { ...prev, current_count: currentCount } : prev
+    prev ? { ...prev, current_count: currentCount, ...detailOverrides } : prev
   );
-  // Lists
   const lists = queryClient.getQueriesData<MeetupResponse[]>({ queryKey: meetupKeys.lists() });
   lists.forEach(([key, list]) => {
     if (!Array.isArray(list)) return;
