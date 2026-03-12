@@ -29,12 +29,17 @@ def _channel_poi(meetup_id: int) -> str:
     return f"{CHANNEL_PREFIX}{meetup_id}{CHANNEL_SUFFIX_POI}"
 
 
-async def publish_midpoint_update(meetup_id: int, midpoint: Optional[Dict[str, float]]) -> None:
-    """join/leave commit 후 라우터에서 호출. Redis에 midpoint 이벤트 발행 (구독자와 동일 async 클라이언트 사용)."""
+async def publish_midpoint_update(
+    meetup_id: int,
+    midpoint: Optional[Dict[str, float]],
+    current_count: int,
+) -> None:
+    """join/leave commit 후 라우터에서 호출. Redis에 midpoint + current_count 이벤트 발행."""
     payload = {
         "type": "midpoint_updated",
         "meetup_id": meetup_id,
         "midpoint": midpoint,
+        "current_count": current_count,
         "ts": datetime.now(timezone.utc).isoformat(),
     }
     try:

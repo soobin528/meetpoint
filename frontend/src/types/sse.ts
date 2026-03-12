@@ -7,6 +7,8 @@ export interface SSEMidpointUpdated {
   type: 'midpoint_updated';
   meetup_id: number;
   midpoint: { lat: number; lng: number } | null;
+  /** Join/leave 시 서버가 포함. 없으면 기존 동작 유지 */
+  current_count?: number;
   ts: string;
 }
 

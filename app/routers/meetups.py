@@ -228,7 +228,7 @@ async def post_join(meetup_id: int, body: JoinBody, db: Session = Depends(get_db
         # commit 후 midpoint 갱신 → SSE 구독자에게 실시간 푸시
         meetup = db.query(Meetup).filter(Meetup.id == meetup_id).first()
         if meetup:
-            await publish_midpoint_update(meetup_id, _midpoint_to_dict(meetup))
+            await publish_midpoint_update(meetup_id, _midpoint_to_dict(meetup), meetup.current_count)
         return {"message": "joined", "current_count": current_count}
 
     except JoinError as e:
@@ -249,7 +249,7 @@ async def delete_leave(meetup_id: int, body: JoinLeaveBody, db: Session = Depend
         # commit 후 midpoint 갱신 → SSE 구독자에게 실시간 푸시
         meetup = db.query(Meetup).filter(Meetup.id == meetup_id).first()
         if meetup:
-            await publish_midpoint_update(meetup_id, _midpoint_to_dict(meetup))
+            await publish_midpoint_update(meetup_id, _midpoint_to_dict(meetup), meetup.current_count)
         return {"message": "left", "current_count": current_count}
 
     except LeaveError as e:

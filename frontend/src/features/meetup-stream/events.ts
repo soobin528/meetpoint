@@ -20,9 +20,27 @@ function patchDetail(
   }
 }
 
-/** midpoint_updated: detail 캐시의 midpoint만 갱신 */
+/** midpoint_updated: detail + 모든 list 캐시에 midpoint, current_count(있을 경우) 갱신 */
 export function applyMidpointUpdated(queryClient: QueryClient, data: SSEMidpointUpdated): void {
-  patchDetail(queryClient, data.meetup_id, { midpoint: data.midpoint });
+  const patch: Partial<MeetupDetailOut> = { midpoint: data.midpoint };
+  if (data.current_count !== undefined) {
+    patch.current_count = data.current_count;
+  }
+  patchDetail(queryClient, data.meetup_id, patch);
+
+  const listQueries = queryClient.getQueriesData<MeetupResponse[]>({ queryKey: meetupKeys.lists() });
+  listQueries.forEach(([queryKey, list]) => {
+    if (!Array.isArray(list)) return;
+    const updated = list.map((m) => {
+      if (m.id !== data.meetup_id) return m;
+      const next: MeetupResponse = { ...m, midpoint: data.midpoint };
+      if (data.current_count !== undefined) {
+        next.current_count = data.current_count;
+      }
+      return next;
+    });
+    queryClient.setQueryData(queryKey, updated);
+  });
 }
 
 /** poi_updated: detail의 midpoint + pois 리스트 캐시 */
