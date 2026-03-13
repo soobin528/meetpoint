@@ -13,24 +13,33 @@ interface MeetupDetailProps {
 }
 
 /** Demo user/location for join. Replace with auth + geolocation. */
-const DEMO_USER_ID = 1;
 const DEMO_LAT = 37.5;
 const DEMO_LNG = 127.0;
+
+/** [임시] ?user=1 또는 ?user=2 로 두 사용자 테스트. 없거나 잘못되면 1. */
+function getUserIdFromUrl(): number {
+  const p = new URLSearchParams(window.location.search);
+  const u = p.get('user');
+  if (u == null) return 1;
+  const n = parseInt(u, 10);
+  return Number.isFinite(n) && n >= 1 ? n : 1;
+}
 
 export function MeetupDetail({ meetupId, onClose }: MeetupDetailProps) {
   const queryClient = useQueryClient();
   const [inlineError, setInlineError] = useState<string | null>(null);
+  const userId = getUserIdFromUrl();
 
   const { data: meetup, isLoading, error: queryError } = useQuery({
     queryKey: meetupKeys.detail(meetupId),
-    queryFn: () => fetchMeetupDetail(meetupId, DEMO_USER_ID),
+    queryFn: () => fetchMeetupDetail(meetupId, userId),
   });
 
   const isHost = !!meetup?.is_host;
   const isParticipating = !!meetup?.is_participating;
 
   const joinMutation = useMutation({
-    mutationFn: () => joinMeetup(meetupId, { user_id: DEMO_USER_ID, lat: DEMO_LAT, lng: DEMO_LNG }),
+    mutationFn: () => joinMeetup(meetupId, { user_id: userId, lat: DEMO_LAT, lng: DEMO_LNG }),
     onSuccess: (data) => {
       // Update detail + all lists with new current_count; then refetch detail for full consistency.
       patchCurrentCount(queryClient, meetupId, data.current_count, { is_participating: true });
@@ -44,7 +53,7 @@ export function MeetupDetail({ meetupId, onClose }: MeetupDetailProps) {
   });
 
   const leaveMutation = useMutation({
-    mutationFn: () => leaveMeetup(meetupId, { user_id: DEMO_USER_ID }),
+    mutationFn: () => leaveMeetup(meetupId, { user_id: userId }),
     onSuccess: (data) => {
       patchCurrentCount(queryClient, meetupId, data.current_count, { is_participating: false });
       queryClient.invalidateQueries({ queryKey: meetupKeys.detail(meetupId) });
