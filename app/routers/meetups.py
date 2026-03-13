@@ -178,6 +178,20 @@ def get_meetups_bbox(
     return [_meetup_to_response(m) for m in meetups]
 
 
+@router.get("/stream")
+async def get_meetups_stream():
+    """SSE: 모든 meetups의 midpoint/poi/status 이벤트 글로벌 스트림."""
+    return StreamingResponse(
+        stream_all_meetup_events(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
 @router.get("/{meetup_id}", response_model=MeetupDetailOut)
 def get_meetup(
     meetup_id: int,
@@ -413,17 +427,3 @@ async def get_midpoint_stream(meetup_id: int):
             "X-Accel-Buffering": "no",
         },
     )
-
-
-@router.get("/stream")
-async def get_meetups_stream():
-  """SSE: 모든 meetups의 midpoint/poi/status 이벤트 글로벌 스트림."""
-  return StreamingResponse(
-      stream_all_meetup_events(),
-      media_type="text/event-stream",
-      headers={
-          "Cache-Control": "no-cache",
-          "Connection": "keep-alive",
-          "X-Accel-Buffering": "no",
-      },
-  )
