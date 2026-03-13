@@ -1,28 +1,49 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
+import { useCreateMeetup } from './useCreateMeetup';
 
 const CATEGORY_OPTIONS = ['CAFE', 'FOOD', 'STUDY', 'EXERCISE', 'ETC'] as const;
+
+/** [임시] ?user=1 또는 ?user=2. 없거나 잘못되면 1. */
+function getUserIdFromUrl(): number {
+  const p = new URLSearchParams(window.location.search);
+  const u = p.get('user');
+  if (u == null) return 1;
+  const n = parseInt(u, 10);
+  return Number.isFinite(n) && n >= 1 ? n : 1;
+}
 
 interface CreateMeetupBottomSheetProps {
   open: boolean;
   onClose: () => void;
+  lat: number;
+  lng: number;
 }
 
 /** Bottom sheet for creating a new meetup. */
-export function CreateMeetupBottomSheet({ open, onClose }: CreateMeetupBottomSheetProps) {
+export function CreateMeetupBottomSheet({ open, onClose, lat, lng }: CreateMeetupBottomSheetProps) {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState<string | ''>('ETC');
   const [scheduledAt, setScheduledAt] = useState('');
   const [capacity, setCapacity] = useState(10);
 
+  const handleSuccess = useCallback(() => {
+    onClose();
+  }, [onClose]);
+
+  const createMutation = useCreateMeetup(handleSuccess);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    console.log({
+    createMutation.mutate({
       title,
       description,
       category,
       scheduledAt,
       capacity,
+      lat,
+      lng,
+      hostUserId: getUserIdFromUrl(),
     });
   };
 
@@ -124,9 +145,10 @@ export function CreateMeetupBottomSheet({ open, onClose }: CreateMeetupBottomShe
           </div>
           <button
             type="submit"
-            className="w-full rounded bg-emerald-600 py-2.5 text-sm font-medium text-white hover:bg-emerald-700"
+            disabled={createMutation.isPending}
+            className="w-full rounded bg-emerald-600 py-2.5 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
           >
-            Create Meetup
+            {createMutation.isPending ? 'Creating…' : 'Create Meetup'}
           </button>
         </form>
       </div>

@@ -80,6 +80,9 @@ export function MapPage() {
     setCreateSheetOpen(false);
   }, []);
 
+  const mapCenterLat = (bbox.minLat + bbox.maxLat) / 2;
+  const mapCenterLng = (bbox.minLng + bbox.maxLng) / 2;
+
   return (
     <div className="h-full flex flex-col">
       <header className="flex-none py-2 px-4 bg-slate-800 text-white font-semibold">
@@ -112,7 +115,12 @@ export function MapPage() {
           )}
         </MeetupBottomSheet>
 
-        <CreateMeetupBottomSheet open={createSheetOpen} onClose={handleCloseCreateSheet} />
+        <CreateMeetupBottomSheet
+          open={createSheetOpen}
+          onClose={handleCloseCreateSheet}
+          lat={mapCenterLat}
+          lng={mapCenterLng}
+        />
         <CreateMeetupButton onClick={handleCreateMeetup} />
       </div>
     </div>

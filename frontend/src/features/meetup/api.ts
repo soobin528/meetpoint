@@ -3,6 +3,16 @@ import type { MeetupDetailOut, MeetupResponse } from '@/types';
 
 const BASE = '/meetups';
 
+export async function createMeetup(body: {
+  title: string;
+  description?: string;
+  capacity: number;
+  lat: number;
+  lng: number;
+}): Promise<MeetupResponse> {
+  return apiPost<MeetupResponse>(BASE, body);
+}
+
 export async function fetchMeetupsByBbox(
   minLat: number,
   minLng: number,
