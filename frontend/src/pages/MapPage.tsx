@@ -12,6 +12,8 @@ import {
   useClusters,
   DEFAULT_BBOX,
 } from '@/features/map';
+import { CreateMeetupButton } from '@/features/create-meetup/CreateMeetupButton';
+import { CreateMeetupBottomSheet } from '@/features/create-meetup/CreateMeetupBottomSheet';
 import { MeetupBottomSheet, MeetupDetail } from '@/features/meetup-detail';
 import type { MeetupResponse } from '@/types';
 
@@ -25,6 +27,7 @@ export function MapPage() {
   const [userLocationToApply, setUserLocationToApply] = useState<[number, number] | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [selectedSummary, setSelectedSummary] = useState<MeetupResponse | null>(null);
+  const [createSheetOpen, setCreateSheetOpen] = useState(false);
   const lastMarkerClickAtRef = useRef(0);
   const suppressNextMoveendRef = useRef(false);
 
@@ -69,6 +72,14 @@ export function MapPage() {
     setSelectedSummary(null);
   }, []);
 
+  const handleCreateMeetup = useCallback(() => {
+    setCreateSheetOpen(true);
+  }, []);
+
+  const handleCloseCreateSheet = useCallback(() => {
+    setCreateSheetOpen(false);
+  }, []);
+
   return (
     <div className="h-full flex flex-col">
       <header className="flex-none py-2 px-4 bg-slate-800 text-white font-semibold">
@@ -100,6 +111,9 @@ export function MapPage() {
             <MeetupDetail meetupId={selectedId} onClose={handleCloseSheet} />
           )}
         </MeetupBottomSheet>
+
+        <CreateMeetupBottomSheet open={createSheetOpen} onClose={handleCloseCreateSheet} />
+        <CreateMeetupButton onClick={handleCreateMeetup} />
       </div>
     </div>
   );
