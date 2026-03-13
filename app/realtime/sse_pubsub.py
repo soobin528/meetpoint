@@ -140,3 +140,47 @@ async def stream_midpoint_events(meetup_id: int) -> AsyncGenerator[str, None]:
     finally:
         await pubsub.unsubscribe(channel_mid, channel_poi)
         await pubsub.close()
+
+
+async def stream_all_meetup_events() -> AsyncGenerator[str, None]:
+    """
+    글로벌 SSE 스트림 (/meetups/stream) 용.
+    meetup:*:midpoint / meetup:*:poi 패턴을 모두 구독해 모든 모임의 이벤트를 전달.
+    """
+    pattern_mid = f"{CHANNEL_PREFIX}*{CHANNEL_SUFFIX}"
+    pattern_poi = f"{CHANNEL_PREFIX}*{CHANNEL_SUFFIX_POI}"
+    pubsub = redis_client.pubsub()
+    try:
+        await pubsub.psubscribe(pattern_mid, pattern_poi)
+        last_heartbeat = datetime.now(timezone.utc).timestamp()
+
+        while True:
+            message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
+            now = datetime.now(timezone.utc).timestamp()
+            if now - last_heartbeat >= HEARTBEAT_INTERVAL:
+                yield ": ping\n\n"
+                last_heartbeat = now
+            if message and message.get("type") in ("message", "pmessage"):
+                data = message.get("data") or ""
+                ch = message.get("channel") or ""
+                # meetup:*:poi 패턴이면 poi/상태 관련 이벤트, 아니면 midpoint_updated
+                if ch.endswith(CHANNEL_SUFFIX_POI):
+                    try:
+                        parsed = json.loads(data)
+                        t = parsed.get("type")
+                        if t == "meetup_status_changed":
+                            event_name = "meetup_status_changed"
+                        elif t == "poi_confirmed":
+                            event_name = "poi_confirmed"
+                        else:
+                            event_name = "poi_updated"
+                    except Exception:
+                        event_name = "poi_updated"
+                else:
+                    event_name = "midpoint_updated"
+                yield f"event: {event_name}\ndata: {data}\n\n"
+    except asyncio.CancelledError:
+        pass
+    finally:
+        await pubsub.punsubscribe(pattern_mid, pattern_poi)
+        await pubsub.close()

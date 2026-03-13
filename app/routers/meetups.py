@@ -26,6 +26,7 @@ from app.realtime.sse_pubsub import (
     publish_meetup_status_changed,
     publish_poi_confirmed,
     stream_midpoint_events,
+    stream_all_meetup_events,
 )
 from app.schemas.meetup import (
     ConfirmPoiBody,
@@ -412,3 +413,17 @@ async def get_midpoint_stream(meetup_id: int):
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@router.get("/stream")
+async def get_meetups_stream():
+  """SSE: 모든 meetups의 midpoint/poi/status 이벤트 글로벌 스트림."""
+  return StreamingResponse(
+      stream_all_meetup_events(),
+      media_type="text/event-stream",
+      headers={
+          "Cache-Control": "no-cache",
+          "Connection": "keep-alive",
+          "X-Accel-Buffering": "no",
+      },
+  )

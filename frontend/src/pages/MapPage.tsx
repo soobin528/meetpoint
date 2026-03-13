@@ -2,7 +2,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { meetupKeys } from '@/shared/api';
 import { fetchMeetupsByBbox } from '@/features/meetup/api';
-import { useMeetupStream } from '@/features/meetup-stream';
+import { useMeetupStream, useMeetupsStream } from '@/features/meetup-stream';
 import {
   MapView,
   MapBBoxReporter,
@@ -35,6 +35,7 @@ export function MapPage() {
   });
 
   const points = useClusters(meetups, bbox, zoom);
+  useMeetupsStream();
   useMeetupStream(selectedId);
 
   useEffect(() => {
