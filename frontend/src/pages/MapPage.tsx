@@ -8,6 +8,7 @@ import {
   MapBBoxReporter,
   MapZoomReporter,
   MapMarkers,
+  MidpointMarkers,
   MapClickCloser,
   useClusters,
   DEFAULT_BBOX,
@@ -67,6 +68,14 @@ export function MapPage() {
     setSelectedSummary(meetup);
   }, []);
 
+  const handleSelectMeetupById = useCallback(
+    (meetupId: number) => {
+      const meetup = meetups.find((m) => m.id === meetupId);
+      if (meetup) handleSelectMeetup(meetup);
+    },
+    [meetups, handleSelectMeetup]
+  );
+
   const handleCloseSheet = useCallback(() => {
     setSelectedId(null);
     setSelectedSummary(null);
@@ -106,6 +115,11 @@ export function MapPage() {
             onSelectMeetup={handleSelectMeetup}
             lastMarkerClickAtRef={lastMarkerClickAtRef}
             suppressNextRef={suppressNextMoveendRef}
+          />
+          <MidpointMarkers
+            meetups={meetups}
+            onSelectMeetup={handleSelectMeetupById}
+            lastMarkerClickAtRef={lastMarkerClickAtRef}
           />
         </MapView>
 
