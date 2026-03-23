@@ -25,6 +25,7 @@ export function useCreateMeetup(onSuccess?: () => void) {
         capacity: input.capacity,
         lat: input.lat,
         lng: input.lng,
+        host_user_id: input.hostUserId,
       };
       return createMeetup(body);
     },
@@ -34,3 +35,4 @@ export function useCreateMeetup(onSuccess?: () => void) {
     },
   });
 }
+

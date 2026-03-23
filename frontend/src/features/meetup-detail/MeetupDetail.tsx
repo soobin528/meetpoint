@@ -128,6 +128,24 @@ export function MeetupDetail({ meetupId, onClose }: MeetupDetailProps) {
       <p className="text-sm text-slate-500 mt-1">
         {meetup.current_count} / {meetup.capacity}명
       </p>
+      <div className="mt-2 p-2 bg-slate-50 rounded text-sm">
+        <span className="font-medium">🎯 중간지점</span>
+        {meetup.midpoint ? (
+          <>
+            <br />
+            <span className="text-slate-600">현재 참여자 기준 중간지점이에요</span>
+            <br />
+            <span className="text-slate-600">
+              Latitude {meetup.midpoint.lat.toFixed(6)} / Longitude {meetup.midpoint.lng.toFixed(6)}
+            </span>
+          </>
+        ) : (
+          <>
+            <br />
+            <span className="text-slate-600">참여자가 더 모이면 중간지점이 표시돼요</span>
+          </>
+        )}
+      </div>
       {meetup.confirmed_poi && (
         <div className="mt-2 p-2 bg-slate-50 rounded text-sm">
           <span className="font-medium">확정 장소</span>: {meetup.confirmed_poi.name}

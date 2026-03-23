@@ -9,6 +9,7 @@ export async function createMeetup(body: {
   capacity: number;
   lat: number;
   lng: number;
+  host_user_id: number;
 }): Promise<MeetupResponse> {
   return apiPost<MeetupResponse>(BASE, body);
 }
@@ -62,3 +63,4 @@ export async function leaveMeetup(
 ): Promise<{ message: string; current_count: number }> {
   return apiDelete(`${BASE}/${meetupId}/leave`, body);
 }
+

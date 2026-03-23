@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { useCreateMeetup } from './useCreateMeetup';
+import { useCreateMeetup } from './useCreateMeetup.ts';
 
 const CATEGORY_OPTIONS = ['CAFE', 'FOOD', 'STUDY', 'EXERCISE', 'ETC'] as const;
 

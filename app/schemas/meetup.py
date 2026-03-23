@@ -14,6 +14,7 @@ class MeetupCreate(BaseModel):
     title: str = Field(..., min_length=1, max_length=100)
     description: Optional[str] = None
     capacity: int = Field(default=10, ge=1)
+    host_user_id: int = Field(..., ge=1)
     lat: float = Field(..., ge=-90, le=90)
     lng: float = Field(..., ge=-180, le=180)
 

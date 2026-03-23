@@ -133,8 +133,19 @@ def create_meetup(body: MeetupCreate, db: Session = Depends(get_db)) -> MeetupRe
         description=body.description,
         capacity=body.capacity,
         location=location,
+        current_count=1,
     )
     db.add(meetup)
+    db.flush()  # meetup.id 확보를 위해 flush
+
+    participation = Participation(
+        user_id=body.host_user_id,
+        meetup_id=meetup.id,
+        approx_lat=body.lat,
+        approx_lng=body.lng,
+    )
+    db.add(participation)
+
     db.commit()
     db.refresh(meetup)
     return _meetup_to_response(meetup)
