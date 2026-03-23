@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { meetupKeys, AbortRequestError, ApiError } from '@/shared/api';
 import { fetchMeetupDetail, joinMeetup, leaveMeetup, finishMeetup, cancelMeetup } from '@/features/meetup/api';
-import type { MeetupDetailOut, MeetupResponse, MeetupStatus } from '@/types';
+import { MEETUP_CATEGORY_LABEL, type MeetupDetailOut, type MeetupResponse, type MeetupStatus } from '@/types';
 import { StatusBadge } from '@/features/meetup/components/StatusBadge';
 import { getMeetupActionAvailability } from '@/features/meetup/logic/actionAvailability';
 import { MeetupActionButtons } from '@/features/meetup/components/MeetupActionButtons';
@@ -122,6 +122,9 @@ export function MeetupDetail({ meetupId, onClose }: MeetupDetailProps) {
         <h2 className="truncate text-lg font-semibold">{meetup.title}</h2>
         <StatusBadge status={status} />
       </div>
+      {meetup.category && (
+        <p className="text-sm text-slate-500 mt-1">카테고리: {MEETUP_CATEGORY_LABEL[meetup.category]}</p>
+      )}
       {meetup.description && (
         <p className="text-sm text-slate-600 mt-1">{meetup.description}</p>
       )}

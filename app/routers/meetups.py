@@ -111,6 +111,7 @@ def _meetup_to_response(meetup: Meetup, distance_km: float | None = None) -> Mee
     return MeetupResponse(
         id=meetup.id,
         status=status_val,
+        category=meetup.category or "FREE",
         title=meetup.title,
         description=meetup.description,
         capacity=meetup.capacity,
@@ -131,6 +132,7 @@ def create_meetup(body: MeetupCreate, db: Session = Depends(get_db)) -> MeetupRe
     meetup = Meetup(
         title=body.title,
         description=body.description,
+        category=body.category,
         capacity=body.capacity,
         location=location,
         current_count=1,
@@ -232,6 +234,7 @@ def get_meetup(
     return MeetupDetailOut(
         id=meetup.id,
         status=status_val,
+        category=meetup.category or "FREE",
         title=meetup.title,
         description=meetup.description,
         capacity=meetup.capacity,

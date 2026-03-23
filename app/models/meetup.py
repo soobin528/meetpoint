@@ -29,6 +29,7 @@ class Meetup(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     status = Column(String(20), nullable=False, default=STATUS_DEFAULT, server_default=STATUS_DEFAULT)
+    category = Column(String(20), nullable=False, default="FREE", server_default="FREE")
     title = Column(String(100), nullable=False)  # 제목
     description = Column(Text, nullable=True)  # 설명(선택)
     capacity = Column(Integer, nullable=False, default=10)  # 최대 인원

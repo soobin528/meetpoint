@@ -27,7 +27,6 @@ export function MapPage() {
   /** Set once when geolocation succeeds; applied to map one time only, then not synced again. */
   const [userLocationToApply, setUserLocationToApply] = useState<[number, number] | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [selectedSummary, setSelectedSummary] = useState<MeetupResponse | null>(null);
   const [createSheetOpen, setCreateSheetOpen] = useState(false);
   const lastMarkerClickAtRef = useRef(0);
   const suppressNextMoveendRef = useRef(false);
@@ -65,7 +64,6 @@ export function MapPage() {
 
   const handleSelectMeetup = useCallback((meetup: MeetupResponse) => {
     setSelectedId(meetup.id);
-    setSelectedSummary(meetup);
   }, []);
 
   const handleSelectMeetupById = useCallback(
@@ -78,7 +76,6 @@ export function MapPage() {
 
   const handleCloseSheet = useCallback(() => {
     setSelectedId(null);
-    setSelectedSummary(null);
   }, []);
 
   const handleCreateMeetup = useCallback(() => {

@@ -4,6 +4,15 @@
  */
 
 export type MeetupStatus = 'RECRUITING' | 'CONFIRMED' | 'FINISHED' | 'CANCELED';
+export type MeetupCategory = 'STUDY' | 'MEAL' | 'CAFE_CHAT' | 'EXERCISE' | 'FREE';
+
+export const MEETUP_CATEGORY_LABEL: Record<MeetupCategory, string> = {
+  STUDY: '스터디',
+  MEAL: '식사',
+  CAFE_CHAT: '카페',
+  EXERCISE: '운동',
+  FREE: '자유',
+};
 
 export interface MidpointOut {
   lat: number;
@@ -22,6 +31,7 @@ export interface ConfirmedPoiOut {
 export interface MeetupResponse {
   id: number;
   status: MeetupStatus;
+  category?: MeetupCategory;
   title: string;
   description: string | null;
   capacity: number;
@@ -37,6 +47,7 @@ export interface MeetupResponse {
 export interface MeetupDetailOut {
   id: number;
   status: MeetupStatus;
+  category?: MeetupCategory;
   title: string;
   description: string | null;
   capacity: number;

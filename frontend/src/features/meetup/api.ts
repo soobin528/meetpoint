@@ -1,11 +1,12 @@
 import { apiGet, apiPost, apiDelete } from '@/shared/api';
-import type { MeetupDetailOut, MeetupResponse } from '@/types';
+import type { MeetupCategory, MeetupDetailOut, MeetupResponse } from '@/types';
 
 const BASE = '/meetups';
 
 export async function createMeetup(body: {
   title: string;
   description?: string;
+  category: MeetupCategory;
   capacity: number;
   lat: number;
   lng: number;

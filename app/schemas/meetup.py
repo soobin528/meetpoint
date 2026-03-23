@@ -6,6 +6,7 @@ from typing import Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 MeetupStatusLiteral = Literal["RECRUITING", "CONFIRMED", "FINISHED", "CANCELED"]
+MeetupCategoryLiteral = Literal["STUDY", "MEAL", "CAFE_CHAT", "EXERCISE", "FREE"]
 
 
 class MeetupCreate(BaseModel):
@@ -13,6 +14,7 @@ class MeetupCreate(BaseModel):
 
     title: str = Field(..., min_length=1, max_length=100)
     description: Optional[str] = None
+    category: MeetupCategoryLiteral = "FREE"
     capacity: int = Field(default=10, ge=1)
     host_user_id: int = Field(..., ge=1)
     lat: float = Field(..., ge=-90, le=90)
@@ -45,6 +47,7 @@ class MeetupResponse(BaseModel):
 
     id: int
     status: MeetupStatusLiteral = "RECRUITING"
+    category: MeetupCategoryLiteral = "FREE"
     title: str
     description: Optional[str] = None
     capacity: int
@@ -79,6 +82,7 @@ class MeetupDetailOut(BaseModel):
 
     id: int
     status: MeetupStatusLiteral
+    category: MeetupCategoryLiteral = "FREE"
     title: str
     description: Optional[str] = None
     capacity: int

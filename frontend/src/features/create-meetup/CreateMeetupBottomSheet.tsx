@@ -1,7 +1,8 @@
 import { useState, useCallback } from 'react';
 import { useCreateMeetup } from './useCreateMeetup.ts';
+import { MEETUP_CATEGORY_LABEL, type MeetupCategory } from '@/types';
 
-const CATEGORY_OPTIONS = ['CAFE', 'FOOD', 'STUDY', 'EXERCISE', 'ETC'] as const;
+const CATEGORY_OPTIONS: MeetupCategory[] = ['STUDY', 'MEAL', 'CAFE_CHAT', 'EXERCISE', 'FREE'];
 
 /** [임시] ?user=1 또는 ?user=2. 없거나 잘못되면 1. */
 function getUserIdFromUrl(): number {
@@ -23,7 +24,7 @@ interface CreateMeetupBottomSheetProps {
 export function CreateMeetupBottomSheet({ open, onClose, lat, lng }: CreateMeetupBottomSheetProps) {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [category, setCategory] = useState<string | ''>('ETC');
+  const [category, setCategory] = useState<MeetupCategory>('FREE');
   const [scheduledAt, setScheduledAt] = useState('');
   const [capacity, setCapacity] = useState(10);
 
@@ -108,12 +109,12 @@ export function CreateMeetupBottomSheet({ open, onClose, lat, lng }: CreateMeetu
             <select
               id="create-category"
               value={category}
-              onChange={(e) => setCategory(e.target.value)}
+              onChange={(e) => setCategory(e.target.value as MeetupCategory)}
               className={inputClass}
             >
               {CATEGORY_OPTIONS.map((opt) => (
                 <option key={opt} value={opt}>
-                  {opt}
+                  {MEETUP_CATEGORY_LABEL[opt]}
                 </option>
               ))}
             </select>
