@@ -4,13 +4,17 @@
  */
 
 export type MeetupStatus = 'RECRUITING' | 'CONFIRMED' | 'FINISHED' | 'CANCELED';
-export type MeetupCategory = 'STUDY' | 'MEAL' | 'CAFE_CHAT' | 'EXERCISE' | 'FREE';
+export type MeetupCategory = 'STUDY' | 'MEAL' | 'CAFE_CHAT' | 'EXERCISE' | 'DRINK' | 'OUTDOOR' | 'CULTURE' | 'SHOPPING' | 'FREE';
 
 export const MEETUP_CATEGORY_LABEL: Record<MeetupCategory, string> = {
   STUDY: '스터디',
   MEAL: '식사',
   CAFE_CHAT: '카페',
   EXERCISE: '운동',
+  DRINK: '술',
+  OUTDOOR: '야외',
+  CULTURE: '문화',
+  SHOPPING: '쇼핑',
   FREE: '자유',
 };
 

@@ -30,6 +30,8 @@ export function useCreateMeetup(onSuccess?: () => void) {
       };
       return createMeetup(body);
     },
+    // Avoid long retry loops that can make the UI appear stuck.
+    retry: false,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: meetupKeys.all });
       onSuccess?.();

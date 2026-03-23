@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { meetupKeys } from '@/shared/api';
 import { fetchMeetupsByBbox } from '@/features/meetup/api';
@@ -9,6 +9,7 @@ import {
   MapZoomReporter,
   MapMarkers,
   MidpointMarkers,
+  CategoryFilterBar,
   MapClickCloser,
   useClusters,
   DEFAULT_BBOX,
@@ -16,14 +17,26 @@ import {
 import { CreateMeetupButton } from '@/features/create-meetup/CreateMeetupButton';
 import { CreateMeetupBottomSheet } from '@/features/create-meetup/CreateMeetupBottomSheet';
 import { MeetupBottomSheet, MeetupDetail } from '@/features/meetup-detail';
-import type { MeetupResponse } from '@/types';
+import type { MeetupCategory, MeetupResponse } from '@/types';
 
 /** Fallback center when geolocation is unavailable (e.g. Gangnam). */
 const DEFAULT_CENTER: [number, number] = [37.5, 127.0];
+const ALL_MEETUP_CATEGORIES: MeetupCategory[] = [
+  'STUDY',
+  'MEAL',
+  'CAFE_CHAT',
+  'EXERCISE',
+  'DRINK',
+  'OUTDOOR',
+  'CULTURE',
+  'SHOPPING',
+  'FREE',
+];
 
 export function MapPage() {
   const [bbox, setBbox] = useState(DEFAULT_BBOX);
   const [zoom, setZoom] = useState(12);
+  const [selectedCategory, setSelectedCategory] = useState<'ALL' | MeetupCategory>('ALL');
   /** Set once when geolocation succeeds; applied to map one time only, then not synced again. */
   const [userLocationToApply, setUserLocationToApply] = useState<[number, number] | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -37,7 +50,17 @@ export function MapPage() {
       fetchMeetupsByBbox(bbox.minLat, bbox.minLng, bbox.maxLat, bbox.maxLng, { signal }),
   });
 
-  const points = useClusters(meetups, bbox, zoom);
+  const filteredMeetups = useMemo(() => {
+    if (selectedCategory === 'ALL') return meetups;
+    // Hot-reload/old state safety: if selectedCategory somehow contains an invalid runtime value,
+    // treat it like 'ALL' to avoid hiding all meetups.
+    if (!ALL_MEETUP_CATEGORIES.includes(selectedCategory as MeetupCategory)) return meetups;
+
+    // Backward compatibility: older meetups may miss category; treat them as FREE for filtering.
+    return meetups.filter((m) => (m.category ?? 'FREE') === selectedCategory);
+  }, [meetups, selectedCategory]);
+
+  const points = useClusters(filteredMeetups, bbox, zoom);
   useMeetupsStream();
   useMeetupStream(selectedId);
 
@@ -68,10 +91,10 @@ export function MapPage() {
 
   const handleSelectMeetupById = useCallback(
     (meetupId: number) => {
-      const meetup = meetups.find((m) => m.id === meetupId);
+      const meetup = filteredMeetups.find((m) => m.id === meetupId);
       if (meetup) handleSelectMeetup(meetup);
     },
-    [meetups, handleSelectMeetup]
+    [filteredMeetups, handleSelectMeetup]
   );
 
   const handleCloseSheet = useCallback(() => {
@@ -96,6 +119,7 @@ export function MapPage() {
       </header>
 
       <div className="flex-1 relative">
+        <CategoryFilterBar selectedCategory={selectedCategory} onChange={setSelectedCategory} />
         <MapView
           initialCenter={DEFAULT_CENTER}
           zoom={zoom}
@@ -114,7 +138,7 @@ export function MapPage() {
             suppressNextRef={suppressNextMoveendRef}
           />
           <MidpointMarkers
-            meetups={meetups}
+            meetups={filteredMeetups}
             onSelectMeetup={handleSelectMeetupById}
             lastMarkerClickAtRef={lastMarkerClickAtRef}
           />

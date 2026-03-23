@@ -6,7 +6,17 @@ from typing import Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 MeetupStatusLiteral = Literal["RECRUITING", "CONFIRMED", "FINISHED", "CANCELED"]
-MeetupCategoryLiteral = Literal["STUDY", "MEAL", "CAFE_CHAT", "EXERCISE", "FREE"]
+MeetupCategoryLiteral = Literal[
+    "STUDY",
+    "MEAL",
+    "CAFE_CHAT",
+    "EXERCISE",
+    "DRINK",
+    "OUTDOOR",
+    "CULTURE",
+    "SHOPPING",
+    "FREE",
+]
 
 
 class MeetupCreate(BaseModel):

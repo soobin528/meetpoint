@@ -1,8 +1,19 @@
 import { useState, useCallback } from 'react';
 import { useCreateMeetup } from './useCreateMeetup.ts';
+import { ApiError } from '@/shared/api';
 import { MEETUP_CATEGORY_LABEL, type MeetupCategory } from '@/types';
 
-const CATEGORY_OPTIONS: MeetupCategory[] = ['STUDY', 'MEAL', 'CAFE_CHAT', 'EXERCISE', 'FREE'];
+const CATEGORY_OPTIONS: MeetupCategory[] = [
+  'STUDY',
+  'MEAL',
+  'CAFE_CHAT',
+  'EXERCISE',
+  'DRINK',
+  'OUTDOOR',
+  'CULTURE',
+  'SHOPPING',
+  'FREE',
+];
 
 /** [임시] ?user=1 또는 ?user=2. 없거나 잘못되면 1. */
 function getUserIdFromUrl(): number {
@@ -33,9 +44,17 @@ export function CreateMeetupBottomSheet({ open, onClose, lat, lng }: CreateMeetu
   }, [onClose]);
 
   const createMutation = useCreateMeetup(handleSuccess);
+  const errorMessage =
+    createMutation.error instanceof ApiError
+      ? createMutation.error.detail ?? createMutation.error.message
+      : createMutation.error instanceof Error
+        ? createMutation.error.message
+        : null;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    // Clear previous error when the user retries.
+    createMutation.reset();
     createMutation.mutate({
       title,
       description,
@@ -151,6 +170,12 @@ export function CreateMeetupBottomSheet({ open, onClose, lat, lng }: CreateMeetu
           >
             {createMutation.isPending ? 'Creating…' : 'Create Meetup'}
           </button>
+
+          {errorMessage && (
+            <div className="mt-2 p-2 bg-red-50 text-red-700 text-sm rounded" role="alert">
+              {errorMessage}
+            </div>
+          )}
         </form>
       </div>
     </>
