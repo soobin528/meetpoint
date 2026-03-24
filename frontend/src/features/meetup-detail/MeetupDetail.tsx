@@ -1,7 +1,14 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { meetupKeys, AbortRequestError, ApiError } from '@/shared/api';
-import { fetchMeetupDetail, joinMeetup, leaveMeetup, finishMeetup, cancelMeetup } from '@/features/meetup/api';
+import {
+  fetchMeetupDetail,
+  joinMeetup,
+  leaveMeetup,
+  finishMeetup,
+  cancelMeetup,
+  confirmPoi,
+} from '@/features/meetup/api';
 import { MEETUP_CATEGORY_LABEL, type MeetupDetailOut, type MeetupResponse, type MeetupStatus } from '@/types';
 import { StatusBadge } from '@/features/meetup/components/StatusBadge';
 import { getMeetupActionAvailability } from '@/features/meetup/logic/actionAvailability';
@@ -29,6 +36,7 @@ function getUserIdFromUrl(): number {
 export function MeetupDetail({ meetupId, onClose }: MeetupDetailProps) {
   const queryClient = useQueryClient();
   const [inlineError, setInlineError] = useState<string | null>(null);
+  const [reselectMode, setReselectMode] = useState(false);
   const userId = getUserIdFromUrl();
 
   const { data: meetup, isLoading, error: queryError } = useQuery({
@@ -98,6 +106,25 @@ export function MeetupDetail({ meetupId, onClose }: MeetupDetailProps) {
     },
   });
 
+  const confirmPoiMutation = useMutation({
+    mutationFn: (poi: { name: string; lat: number; lng: number; address: string }) =>
+      confirmPoi(meetupId, poi),
+    retry: false,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: meetupKeys.detail(meetupId) });
+      queryClient.invalidateQueries({ queryKey: meetupKeys.lists() });
+      setInlineError(null);
+    },
+    onError: (err) => {
+      if (err instanceof AbortRequestError) return;
+      setInlineError(err instanceof ApiError ? (err.detail ?? err.message) : (err as Error).message);
+    },
+  });
+
+  useEffect(() => {
+    if (!meetup?.confirmed_poi) setReselectMode(false);
+  }, [meetup?.confirmed_poi]);
+
   if (isLoading || !meetup) {
     return (
       <div className="p-4">
@@ -122,6 +149,16 @@ export function MeetupDetail({ meetupId, onClose }: MeetupDetailProps) {
 
   const status = meetup.status;
   const availability = getMeetupActionAvailability(status, isHost, isParticipating);
+  const adjustedAvailability = isHost
+    ? { ...availability, canJoin: false, canLeave: false }
+    : availability;
+  const canConfirmMockPoi =
+    isHost &&
+    status === 'RECRUITING' &&
+    !!meetup.midpoint &&
+    meetup.current_count >= 2;
+  const showRecommendationSection =
+    !!meetup.midpoint && meetup.current_count >= 2 && (!meetup.confirmed_poi || reselectMode);
 
   return (
     <div className="p-4">
@@ -156,7 +193,7 @@ export function MeetupDetail({ meetupId, onClose }: MeetupDetailProps) {
           </>
         )}
       </div>
-      {meetup.midpoint && meetup.current_count >= 2 && (
+      {showRecommendationSection && (
         <div className="mt-2 p-2 bg-slate-50 rounded text-sm">
           <span className="font-medium">📍 추천 장소</span>
           <div className="mt-1 space-y-2">
@@ -167,16 +204,47 @@ export function MeetupDetail({ meetupId, onClose }: MeetupDetailProps) {
                 <div className="text-xs text-slate-500 mt-0.5">
                   {poi.lat.toFixed(6)}, {poi.lng.toFixed(6)}
                 </div>
+                {canConfirmMockPoi && (
+                  <button
+                    type="button"
+                    disabled={confirmPoiMutation.isPending}
+                    onClick={() =>
+                      confirmPoiMutation.mutate({
+                        name: poi.name,
+                        lat: poi.lat,
+                        lng: poi.lng,
+                        address: `${poi.name} 인근 (추천)`,
+                      })
+                    }
+                    className="mt-2 w-full rounded bg-emerald-600 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+                  >
+                    이 장소로 확정
+                  </button>
+                )}
               </div>
             ))}
           </div>
         </div>
       )}
       {meetup.confirmed_poi && (
-        <div className="mt-2 p-2 bg-slate-50 rounded text-sm">
-          <span className="font-medium">확정 장소</span>: {meetup.confirmed_poi.name}
-          <br />
-          <span className="text-slate-600">{meetup.confirmed_poi.address}</span>
+        <div className="mt-2 rounded-lg border-2 border-emerald-600 bg-emerald-50 p-3 text-sm shadow-sm">
+          <div className="text-base font-semibold text-emerald-900">✅ 확정 장소</div>
+          <p className="mt-1 font-medium text-slate-900">{meetup.confirmed_poi.name}</p>
+          <p className="text-sm text-slate-700">{meetup.confirmed_poi.address}</p>
+          {isHost && status === 'RECRUITING' && (
+            <button
+              type="button"
+              className="mt-2 rounded border border-emerald-600 px-2.5 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-100"
+              onClick={() => setReselectMode((v) => !v)}
+            >
+              {reselectMode ? '다시 선택 닫기' : '다른 장소 다시 선택'}
+            </button>
+          )}
+          {isHost && status !== 'RECRUITING' && (
+            <p className="mt-2 text-xs text-emerald-800">
+              장소 재선택/확정 취소는 현재 서버 지원이 없어 진행할 수 없습니다.
+            </p>
+          )}
         </div>
       )}
 
@@ -186,11 +254,15 @@ export function MeetupDetail({ meetupId, onClose }: MeetupDetailProps) {
         </div>
       )}
 
+      <p className="mt-3 text-xs text-slate-500">
+        {isHost ? '호스트 관리 액션' : '참여자 액션'}
+      </p>
+
       <MeetupActionButtons
-        availability={availability}
+        availability={adjustedAvailability}
         loadingJoin={joinMutation.isPending}
         loadingLeave={leaveMutation.isPending}
-        loadingConfirm={false}
+        loadingConfirm={confirmPoiMutation.isPending}
         loadingFinish={finishMutation.isPending}
         loadingCancel={cancelMutation.isPending}
         onJoin={() => joinMutation.mutate()}

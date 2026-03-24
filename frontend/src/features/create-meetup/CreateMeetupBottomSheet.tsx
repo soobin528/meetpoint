@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useCreateMeetup } from './useCreateMeetup.ts';
 import { ApiError } from '@/shared/api';
 import { MEETUP_CATEGORY_LABEL, type MeetupCategory } from '@/types';
@@ -38,10 +38,20 @@ export function CreateMeetupBottomSheet({ open, onClose, lat, lng }: CreateMeetu
   const [category, setCategory] = useState<MeetupCategory>('FREE');
   const [scheduledAt, setScheduledAt] = useState('');
   const [capacity, setCapacity] = useState(10);
+  const wasOpenRef = useRef(false);
+
+  const resetForm = useCallback(() => {
+    setTitle('');
+    setDescription('');
+    setCategory('FREE');
+    setScheduledAt('');
+    setCapacity(10);
+  }, []);
 
   const handleSuccess = useCallback(() => {
+    resetForm();
     onClose();
-  }, [onClose]);
+  }, [onClose, resetForm]);
 
   const createMutation = useCreateMeetup(handleSuccess);
   const errorMessage =
@@ -69,6 +79,14 @@ export function CreateMeetupBottomSheet({ open, onClose, lat, lng }: CreateMeetu
 
   const inputClass =
     'mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500';
+
+  useEffect(() => {
+    if (open && !wasOpenRef.current) {
+      resetForm();
+      createMutation.reset();
+    }
+    wasOpenRef.current = open;
+  }, [open, resetForm, createMutation]);
 
   if (!open) return null;
 

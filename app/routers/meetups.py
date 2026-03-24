@@ -87,6 +87,17 @@ def _confirmed_poi_out(meetup: Meetup) -> Optional[ConfirmedPoiOut]:
     )
 
 
+def _host_user_id_for_meetup(db: Session, meetup_id: int) -> Optional[int]:
+    """모임 생성 시 첫 참여자(호스트 자동 참가)의 user_id. 없으면 None."""
+    row = (
+        db.query(Participation.user_id)
+        .filter(Participation.meetup_id == meetup_id)
+        .order_by(Participation.id.asc())
+        .first()
+    )
+    return int(row[0]) if row else None
+
+
 def _status_to_literal(meetup: Meetup) -> MeetupStatusLiteral:
     """Meetup.status(ENUM/str/None)를 MeetupStatusLiteral 값으로 정규화."""
     raw = getattr(meetup, "status", None)
@@ -223,6 +234,7 @@ def get_meetup(
     status_val = _status_to_literal(meetup)
 
     is_participating: Optional[bool] = None
+    is_host: Optional[bool] = None
     if user_id is not None:
         is_participating = (
             db.query(Participation.id)
@@ -230,6 +242,8 @@ def get_meetup(
             .first()
             is not None
         )
+        host_uid = _host_user_id_for_meetup(db, meetup_id)
+        is_host = host_uid is not None and user_id == host_uid
 
     return MeetupDetailOut(
         id=meetup.id,
@@ -245,6 +259,7 @@ def get_meetup(
         confirmed_poi=_confirmed_poi_out(meetup),
         distance_km=None,
         is_participating=is_participating,
+        is_host=is_host,
     )
 
 

@@ -104,4 +104,5 @@ class MeetupDetailOut(BaseModel):
     distance_km: Optional[float] = None
     # Optional user-context fields. Provided only when user_id is supplied.
     is_participating: Optional[bool] = None
+    is_host: Optional[bool] = None
 
