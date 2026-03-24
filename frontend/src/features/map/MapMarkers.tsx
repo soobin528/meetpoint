@@ -55,7 +55,10 @@ export function MapMarkers({
               position={[c.lat, c.lng]}
               icon={createClusterIcon(c.count)}
               eventHandlers={{
-                click: () => {
+                click: (e) => {
+                  // Defensive: prevent any accidental browser default navigation from marker DOM.
+                  e.originalEvent.preventDefault();
+                  e.originalEvent.stopPropagation();
                   lastMarkerClickAtRef.current = Date.now();
                   if (suppressNextRef) {
                     suppressNextRef.current = true;
@@ -77,7 +80,10 @@ export function MapMarkers({
             position={[m.lat, m.lng]}
             icon={defaultIcon}
             eventHandlers={{
-              click: () => {
+              click: (e) => {
+                // Defensive: marker click should only select meetup and open BottomSheet.
+                e.originalEvent.preventDefault();
+                e.originalEvent.stopPropagation();
                 lastMarkerClickAtRef.current = Date.now();
                 onSelectMeetup(m.meetup);
               },

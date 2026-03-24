@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { meetupKeys, AbortRequestError, ApiError } from '@/shared/api';
 import { fetchMeetupDetail, joinMeetup, leaveMeetup, finishMeetup, cancelMeetup } from '@/features/meetup/api';
@@ -6,6 +6,7 @@ import { MEETUP_CATEGORY_LABEL, type MeetupDetailOut, type MeetupResponse, type 
 import { StatusBadge } from '@/features/meetup/components/StatusBadge';
 import { getMeetupActionAvailability } from '@/features/meetup/logic/actionAvailability';
 import { MeetupActionButtons } from '@/features/meetup/components/MeetupActionButtons';
+import { getMockPois } from './getMockPois';
 
 interface MeetupDetailProps {
   meetupId: number;
@@ -34,6 +35,12 @@ export function MeetupDetail({ meetupId, onClose }: MeetupDetailProps) {
     queryKey: meetupKeys.detail(meetupId),
     queryFn: () => fetchMeetupDetail(meetupId, userId),
   });
+
+  const mockPois = useMemo(() => {
+    if (!meetup?.midpoint) return [];
+    if ((meetup.current_count ?? 0) < 2) return [];
+    return getMockPois(meetup.midpoint, meetup.category);
+  }, [meetup?.midpoint, meetup?.category, meetup?.current_count]);
 
   const isHost = !!meetup?.is_host;
   const isParticipating = !!meetup?.is_participating;
@@ -149,6 +156,22 @@ export function MeetupDetail({ meetupId, onClose }: MeetupDetailProps) {
           </>
         )}
       </div>
+      {meetup.midpoint && meetup.current_count >= 2 && (
+        <div className="mt-2 p-2 bg-slate-50 rounded text-sm">
+          <span className="font-medium">📍 추천 장소</span>
+          <div className="mt-1 space-y-2">
+            {mockPois.map((poi) => (
+              <div key={poi.id} className="rounded border border-slate-200 bg-white p-2">
+                <div className="text-sm font-medium text-slate-800">{poi.name}</div>
+                {poi.subtitle && <div className="text-xs text-slate-600 mt-0.5">{poi.subtitle}</div>}
+                <div className="text-xs text-slate-500 mt-0.5">
+                  {poi.lat.toFixed(6)}, {poi.lng.toFixed(6)}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       {meetup.confirmed_poi && (
         <div className="mt-2 p-2 bg-slate-50 rounded text-sm">
           <span className="font-medium">확정 장소</span>: {meetup.confirmed_poi.name}

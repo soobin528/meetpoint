@@ -63,7 +63,10 @@ export function MidpointMarkers({
             position={[lat, lng]}
             icon={midpointIcon}
             eventHandlers={{
-              click: () => {
+              click: (e) => {
+                // Defensive: midpoint marker click should never trigger page navigation.
+                e.originalEvent.preventDefault();
+                e.originalEvent.stopPropagation();
                 if (lastMarkerClickAtRef) {
                   lastMarkerClickAtRef.current = Date.now();
                 }
